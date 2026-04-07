@@ -13,8 +13,14 @@ members = [
 version = "0.1.0"
 edition = "2024"
 authors = ["Dean <ethos@eth-trace.io>"]
+description = "High-Fidelity Ethereum Tracing & Visual Profiling Suite"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/One-Block-Org/Ethos"
+homepage = "https://ethos.eth-trace.io"
+documentation = "https://docs.rs/ethos-core"
+keywords = ["ethereum", "tracing", "evm", "profiler", "flamegraph"]
+categories = ["development-tools", "visualization", "cryptography::cryptocurrencies"]
 
 [workspace.dependencies]
 # CLI & Logging
@@ -35,9 +41,9 @@ futures = "0.3.32"
 chrono = { version = "0.4.44", features = ["serde"] }
 
 # Template & Configuration
-askama = "0.12.1"
+askama = "0.15.6"
 figment = { version = "0.10.19", features = ["toml", "env"] }
-toml = "0.8.20"
+toml = "1.1.2"
 
 # Internal Workspace
 ethos-cli = { path = "crates/ethos-cli" }
