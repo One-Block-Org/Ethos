@@ -35,6 +35,10 @@ pub struct TraceStep {
     pub depth: u16,
     pub stack: Option<Vec<String>>,
     pub memory: Option<Vec<String>>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub reverted: bool,
 }
 
 /// A single collapsed stack entry for aggregation.
@@ -43,6 +47,10 @@ pub struct CollapsedStack {
     pub stack: String,
     pub weight: u64,
     pub last_pc: Option<u64>,
+    #[serde(default)]
+    pub target_address: Option<String>,
+    #[serde(default)]
+    pub reverted: bool,
 }
 
 /// A collapsed execution path with aggregated gas costs.

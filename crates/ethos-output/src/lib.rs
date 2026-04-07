@@ -12,16 +12,23 @@ impl SvgGenerator {
         svg.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 500\" style=\"background-color:#0d1117\">\n");
         svg.push_str("  <style>\n");
         svg.push_str(
-            "    .text { font-family: 'Inter', monospace; fill: #ffffff; font-size: 12px; }\n",
+            "    .text { font-family: 'Inter', monospace; fill: #ffffff; font-size: 12px; pointer-events: none; }\n",
         );
         svg.push_str(
-            "    .box { fill: url(#ethos-gradient); stroke: #1f2937; stroke-width: 1px; }\n",
+            "    .box { fill: url(#ethos-gradient); stroke: #1f2937; stroke-width: 1px; rx: 4px; }\n",
+        );
+        svg.push_str(
+            "    .box-revert { fill: url(#revert-gradient); stroke: #7f1d1d; stroke-width: 1px; rx: 4px; }\n",
         );
         svg.push_str("  </style>\n");
         svg.push_str("  <defs>\n");
         svg.push_str("    <linearGradient id=\"ethos-gradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n");
         svg.push_str("      <stop offset=\"0%\" stop-color=\"#0ea5e9\" />\n");
         svg.push_str("      <stop offset=\"100%\" stop-color=\"#4f46e5\" />\n");
+        svg.push_str("    </linearGradient>\n");
+        svg.push_str("    <linearGradient id=\"revert-gradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n");
+        svg.push_str("      <stop offset=\"0%\" stop-color=\"#ef4444\" />\n");
+        svg.push_str("      <stop offset=\"100%\" stop-color=\"#991b1b\" />\n");
         svg.push_str("    </linearGradient>\n");
         svg.push_str("  </defs>\n");
 
@@ -39,19 +46,27 @@ impl SvgGenerator {
                 continue;
             } // Too small to render
 
+            let box_class = if stack.reverted { "box-revert" } else { "box" };
+
             // Format variables dynamically here where needed
             svg.push_str(&format!(
-                "  <rect x=\"10\" y=\"{}\" width=\"{}\" height=\"20\" class=\"box\" />\n",
-                current_y, width
+                "  <rect x=\"10\" y=\"{}\" width=\"{}\" height=\"20\" class=\"{}\" />\n",
+                current_y, width, box_class
             ));
 
             let leaf_name = stack.stack.split(';').last().unwrap_or("unknown");
+            let mut label = format!("{} ({} gas)", leaf_name, stack.weight);
+            if let Some(addr) = &stack.target_address {
+                label = format!("{} [{}] ({} gas)", leaf_name, addr, stack.weight);
+            }
+            if stack.reverted {
+                label = format!("REVERTED: {}", label);
+            }
 
             svg.push_str(&format!(
-                "  <text x=\"15\" y=\"{}\" class=\"text\">{} ({} gas)</text>\n",
+                "  <text x=\"15\" y=\"{}\" class=\"text\">{}</text>\n",
                 current_y + 14.0,
-                leaf_name,
-                stack.weight
+                label
             ));
 
             current_y += 25.0;

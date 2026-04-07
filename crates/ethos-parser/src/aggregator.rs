@@ -15,8 +15,8 @@ impl Aggregator {
     pub fn build_collapsed_stacks(steps: &[TraceStep]) -> Vec<CollapsedStack> {
         debug!("Building collapsed stacks from {} execution steps", steps.len());
 
-        // Map to aggregate stacks: stack_string -> (total_gas, last_pc)
-        let mut stack_map: HashMap<String, (u64, u64)> = HashMap::new();
+        // Map to aggregate stacks: stack_string -> (total_gas, last_pc, target_address, reverted)
+        let mut stack_map: HashMap<String, (u64, u64, Option<String>, bool)> = HashMap::new();
 
         // Current call stack
         let mut call_stack: Vec<String> = Vec::new();
@@ -35,6 +35,24 @@ impl Aggregator {
                 call_stack.push("CALL".to_string());
             }
 
+            // Extract Target Address if this is a Call opcode
+            let mut target_address = None;
+            if operation == "CALL" || operation == "STATICCALL" || operation == "DELEGATECALL" || operation == "CALLCODE" {
+                if let Some(stack) = &step.stack {
+                    if stack.len() >= 2 {
+                        // In Geth/Anvil trace stack array, the end of the array is the top of the stack.
+                        // CALL takes: gas, address, value, argsOffset, argsLength, retOffset, retLength
+                        let hex_addr = &stack[stack.len() - 2];
+                        let clean_hex = hex_addr.trim_start_matches("0x");
+                        // EVM addresses are exactly 40 chars, padded to 64 chars in stack elements
+                        if clean_hex.len() >= 40 {
+                            let extracted = &clean_hex[clean_hex.len() - 40..];
+                            target_address = Some(format!("0x{}", extracted));
+                        }
+                    }
+                }
+            }
+
             // Build the full stack string with current operation
             let stack_str = if call_stack.is_empty() {
                 operation.clone()
@@ -42,22 +60,29 @@ impl Aggregator {
                 format!("{};{}", call_stack.join(";"), operation)
             };
 
-            // Accumulate gas cost
-            let entry = stack_map.entry(stack_str).or_insert((0, 0));
+            // Accumulate gas cost and flags
+            let entry = stack_map.entry(stack_str).or_insert((0, 0, None, false));
             entry.0 += step.gas_cost;
             entry.1 = step.pc;
-
-            // Important: we push the actual smart contract address or function 
-            // if we can extract it in the future, but for raw structural mapping, 
-            // the operation often serves as the leaf node.
+            if target_address.is_some() {
+                entry.2 = target_address;
+            }
+            if step.reverted {
+                entry.3 = true;
+            }
+            
+            // NOTE: Reverts naturally bubble up visually because if an internal call hits REVERT, 
+            // the specific reverting stack path gets the `entry.3 = true` flag. 
         }
 
         let mut stacks: Vec<CollapsedStack> = stack_map
             .into_iter()
-            .map(|(stack, (weight, pc))| CollapsedStack {
+            .map(|(stack, (weight, pc, target_address, reverted))| CollapsedStack {
                 stack,
                 weight,
                 last_pc: Some(pc),
+                target_address,
+                reverted,
             })
             .collect();
 
@@ -77,13 +102,13 @@ mod tests {
     fn test_aggregator_collapses_simple_call() {
         let steps = vec![
             // Root context opcodes (Depth 1)
-            TraceStep { pc: 0, op: "PUSH1".into(), gas: 100, gas_cost: 3, depth: 1, stack: None, memory: None },
-            TraceStep { pc: 1, op: "CALL".into(), gas: 90, gas_cost: 0, depth: 1, stack: None, memory: None },
+            TraceStep { pc: 0, op: "PUSH1".into(), gas: 100, gas_cost: 3, depth: 1, stack: None, memory: None, error: None, reverted: false },
+            TraceStep { pc: 1, op: "CALL".into(), gas: 90, gas_cost: 0, depth: 1, stack: None, memory: None, error: None, reverted: false },
             // Sub-context opcodes (Depth 2)
-            TraceStep { pc: 0, op: "SSTORE".into(), gas: 50, gas_cost: 20, depth: 2, stack: None, memory: None },
-            TraceStep { pc: 1, op: "RETURN".into(), gas: 20, gas_cost: 0, depth: 2, stack: None, memory: None },
+            TraceStep { pc: 0, op: "SSTORE".into(), gas: 50, gas_cost: 20, depth: 2, stack: None, memory: None, error: None, reverted: false },
+            TraceStep { pc: 1, op: "RETURN".into(), gas: 20, gas_cost: 0, depth: 2, stack: None, memory: None, error: None, reverted: false },
             // Back to root (Depth 1)
-            TraceStep { pc: 2, op: "STOP".into(), gas: 15, gas_cost: 0, depth: 1, stack: None, memory: None },
+            TraceStep { pc: 2, op: "STOP".into(), gas: 15, gas_cost: 0, depth: 1, stack: None, memory: None, error: None, reverted: false },
         ];
 
         let stacks = Aggregator::build_collapsed_stacks(&steps);

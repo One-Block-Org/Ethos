@@ -38,12 +38,21 @@ fn initialize_spinner() -> anyhow::Result<ProgressBar> {
 fn get_demo_trace(spinner: &ProgressBar) -> Vec<TraceStep> {
     spinner.set_message("Generating offline demo trace... [1/2]");
     vec![
-        TraceStep { pc: 0, op: "PUSH1".into(), gas: 1000, gas_cost: 3, depth: 1, stack: None, memory: None },
-        TraceStep { pc: 1, op: "CALL".into(), gas: 997, gas_cost: 0, depth: 1, stack: None, memory: None },
-        TraceStep { pc: 0, op: "SLOAD".into(), gas: 500, gas_cost: 2100, depth: 2, stack: None, memory: None },
-        TraceStep { pc: 1, op: "SSTORE".into(), gas: 480, gas_cost: 20000, depth: 2, stack: None, memory: None },
-        TraceStep { pc: 2, op: "RETURN".into(), gas: 400, gas_cost: 0, depth: 2, stack: None, memory: None },
-        TraceStep { pc: 2, op: "STOP".into(), gas: 300, gas_cost: 0, depth: 1, stack: None, memory: None },
+        TraceStep { pc: 0, op: "PUSH1".into(), gas: 1000, gas_cost: 3, depth: 1, stack: None, memory: None, error: None, reverted: false },
+        // Instead of calling, let's simulate a deep call
+        TraceStep { pc: 1, op: "CALL".into(), gas: 997, gas_cost: 2600, depth: 1, stack: Some(vec![
+            "0x0000000000000000000000000000000000000000".into(), // ret length
+            "0x0000000000000000000000000000000000000000".into(), // ret offset
+            "0x0000000000000000000000000000000000000000".into(), // args length
+            "0x0000000000000000000000000000000000000100".into(), // args offset
+            "0x0000000000000000000000000000000000000000".into(), // value
+            "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".into(), // USDC address!
+            "0x10000".into() // gas
+        ]), memory: None, error: None, reverted: false },
+        TraceStep { pc: 0, op: "SLOAD".into(), gas: 500, gas_cost: 2100, depth: 2, stack: None, memory: None, error: None, reverted: false },
+        TraceStep { pc: 1, op: "SSTORE".into(), gas: 480, gas_cost: 20000, depth: 2, stack: None, memory: None, error: None, reverted: false },
+        TraceStep { pc: 2, op: "REVERT".into(), gas: 400, gas_cost: 5000, depth: 2, stack: None, memory: None, error: None, reverted: true }, // FAILS
+        TraceStep { pc: 2, op: "STOP".into(), gas: 300, gas_cost: 0, depth: 1, stack: None, memory: None, error: None, reverted: false },
     ]
 }
 
