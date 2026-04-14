@@ -1,0 +1,692 @@
+//! # atupa CLI
+//!
+//! Unified Ethereum + Arbitrum Stylus execution profiler.
+//!
+//! ## Usage
+//!
+//! ```text
+//! atupa profile  --tx <HASH> [--rpc <URL>] [--out trace.svg] [--demo]
+//! atupa capture  --tx <HASH> [--rpc <URL>] [--output summary|json|metric] [--file report.json]
+//! atupa audit    --tx <HASH> [--rpc <URL>] [--protocol aave|lido]
+//! atupa diff     --base <HASH> --target <HASH> [--rpc <URL>]
+//! ```
+//!
+//! Can also be invoked as a `cargo` subcommand:
+//!
+//! ```text
+//! cargo atupa profile --tx <HASH>
+//! ```
+
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand, ValueEnum};
+use colored::*;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
+
+use atupa_aave::AaveDeepTracer;
+use atupa_core::TraceStep;
+use atupa_lido::LidoDeepTracer;
+use atupa_nitro::{NitroClient, StitchedReport, VmKind};
+use atupa_rpc::RawStructLog;
+
+// ─── CLI Definition ────────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+#[command(
+    name = "atupa",
+    bin_name = "atupa",
+    about = "🏮 Atupa — Unified Ethereum & Stylus Execution Profiler",
+    long_about = "\
+Inspect, profile, and audit transactions across the full Arbitrum Nitro\n\
+dual-VM stack (EVM + Stylus WASM). Part of the One Block infrastructure suite.\n\
+\n\
+GRANT:  Arbitrum Foundation | Phase I ($50k)\n\
+SOURCE: https://github.com/One-Block-Org/Atupa",
+    version
+)]
+struct Cli {
+    /// Arbitrum / Ethereum RPC endpoint (or set ATUPA_RPC_URL)
+    #[arg(
+        short,
+        long,
+        global = true,
+        env = "ATUPA_RPC_URL",
+        default_value = "http://localhost:8547"
+    )]
+    rpc: String,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Generate a visual SVG flamegraph for any EVM transaction
+    Profile {
+        /// Transaction hash (0x-prefixed); omit when using --demo
+        #[arg(short, long, value_name = "TX_HASH", default_value = "")]
+        tx: String,
+
+        /// Run an offline demo trace (no RPC required)
+        #[arg(long, default_value_t = false)]
+        demo: bool,
+
+        /// Output path for the SVG (default: profile_<tx>.svg)
+        #[arg(short, long, value_name = "FILE")]
+        out: Option<String>,
+
+        /// Etherscan API key for contract name resolution
+        #[arg(long, env = "ETHERSCAN_API_KEY", value_name = "KEY")]
+        etherscan_key: Option<String>,
+    },
+
+    /// Capture a unified EVM + Stylus execution trace (Arbitrum Nitro)
+    Capture {
+        /// Transaction hash to profile (0x-prefixed)
+        #[arg(short, long, value_name = "TX_HASH")]
+        tx: String,
+
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Summary)]
+        output: OutputFormat,
+
+        /// Write output to a file (e.g. --file report.json)
+        #[arg(short = 'f', long, value_name = "FILE")]
+        file: Option<String>,
+    },
+
+    /// Protocol-aware execution auditing (Aave v3/GHO, Lido)
+    Audit {
+        /// Transaction hash to audit (0x-prefixed)
+        #[arg(short, long, value_name = "TX_HASH")]
+        tx: String,
+
+        /// Protocol adapter to apply
+        #[arg(short, long, value_enum, default_value_t = Protocol::Aave)]
+        protocol: Protocol,
+    },
+
+    /// Compare the execution cost of two transactions
+    Diff {
+        /// Base transaction hash (0x-prefixed)
+        #[arg(short, long, value_name = "BASE_TX")]
+        base: String,
+
+        /// Target transaction hash (0x-prefixed)
+        #[arg(short, long, value_name = "TARGET_TX")]
+        target: String,
+    },
+}
+
+#[derive(Clone, ValueEnum, Debug)]
+enum OutputFormat {
+    /// Human-readable terminal summary (default)
+    Summary,
+    /// Full step-by-step JSON — suitable for CI assertions and tooling
+    Json,
+    /// Emit only the numeric unified cost (gas-equiv) — ideal for scripting
+    Metric,
+}
+
+#[derive(Clone, ValueEnum, Debug)]
+enum Protocol {
+    /// Aave v3 + GHO stablecoin protocol adapters
+    Aave,
+    /// Lido stETH execution resilience (Phase II roadmap)
+    Lido,
+}
+
+// ─── Entry Point ──────────────────────────────────────────────────────────────
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Support `cargo atupa <cmd>` by stripping the extra "atupa" argv[1] that
+    // cargo inserts when it dispatches to a cargo-<name> subcommand binary.
+    let raw: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let args = if raw.get(1).and_then(|s| s.to_str()) == Some("atupa") {
+        raw.into_iter()
+            .enumerate()
+            .filter(|(i, _)| *i != 1)
+            .map(|(_, a)| a)
+            .collect::<Vec<_>>()
+    } else {
+        raw
+    };
+
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Warn)
+        .parse_default_env()
+        .init();
+
+    let cli = Cli::parse_from(args);
+
+    print_banner();
+
+    match cli.command {
+        Commands::Profile {
+            tx,
+            demo,
+            out,
+            etherscan_key,
+        } => {
+            cmd_profile(&cli.rpc, &tx, demo, out, etherscan_key).await?;
+        }
+        Commands::Capture { tx, output, file } => {
+            cmd_capture(&cli.rpc, &tx, output, file).await?;
+        }
+        Commands::Audit { tx, protocol } => {
+            cmd_audit(&cli.rpc, &tx, protocol).await?;
+        }
+        Commands::Diff { base, target } => {
+            cmd_diff(&cli.rpc, &base, &target).await?;
+        }
+    }
+
+    Ok(())
+}
+
+// ─── Profile Command ──────────────────────────────────────────────────────────
+
+async fn cmd_profile(
+    rpc: &str,
+    tx: &str,
+    demo: bool,
+    out: Option<String>,
+    etherscan_key: Option<String>,
+) -> Result<()> {
+    if !demo && tx.is_empty() {
+        anyhow::bail!(
+            "You must provide --tx <HASH> or run with --demo.\n\
+             Example: atupa profile --demo"
+        );
+    }
+
+    let display = if demo { "demo" } else { tx };
+    println!("{} {}", "→ Profiling:".bold(), display.cyan());
+    println!("{} {}\n", "→ Endpoint: ".bold(), rpc.dimmed());
+
+    atupa::execute_profile(tx, rpc, demo, out, etherscan_key)
+        .await
+        .context("Profile command failed")
+}
+
+// ─── Capture Command ──────────────────────────────────────────────────────────
+
+async fn cmd_capture(
+    rpc: &str,
+    tx: &str,
+    format: OutputFormat,
+    file: Option<String>,
+) -> Result<()> {
+    let tx = normalise_hash(tx);
+    println!("{} {}", "→ Transaction:".bold(), tx.cyan());
+    println!("{} {}\n", "→ Endpoint:   ".bold(), rpc.dimmed());
+
+    // Phase 1: fetch ──────────────────────────────────────────────────────────
+    let pb = spinner("Fetching dual-VM traces from Arbitrum Nitro…");
+    let client = NitroClient::new(rpc.to_string());
+
+    let report = client
+        .trace_transaction(&tx)
+        .await
+        .context("Failed to fetch trace — is the Arbitrum node running?")?;
+
+    pb.finish_with_message(format!(
+        "{} Fetched {} EVM steps + {} Stylus HostIOs",
+        "✔".green().bold(),
+        evm_count(&report).to_string().green(),
+        report.stylus_steps().len().to_string().yellow(),
+    ));
+
+    // Phase 2: render ─────────────────────────────────────────────────────────
+    let pb2 = spinner("Rendering report…");
+    let rendered = match format {
+        OutputFormat::Summary => render_capture_summary(&report),
+        OutputFormat::Json => serde_json::to_string_pretty(&report)?,
+        OutputFormat::Metric => format!("{:.4}", report.total_unified_cost),
+    };
+    pb2.finish_with_message(format!("{} Report ready.", "✔".green().bold()));
+
+    println!();
+
+    // Phase 3: output ─────────────────────────────────────────────────────────
+    if let Some(path) = file {
+        std::fs::write(&path, &rendered)
+            .with_context(|| format!("Failed to write report to '{path}'"))?;
+        println!(
+            "{} Report written to {}",
+            "✔".green().bold(),
+            path.cyan().bold()
+        );
+    } else {
+        println!("{}", rendered);
+    }
+
+    Ok(())
+}
+
+// ─── Audit Command ────────────────────────────────────────────────────────────
+
+async fn cmd_audit(rpc: &str, tx: &str, protocol: Protocol) -> Result<()> {
+    let tx = normalise_hash(tx);
+    let label = match protocol {
+        Protocol::Aave => "Aave v3 + GHO",
+        Protocol::Lido => "Lido stETH",
+    };
+
+    println!(
+        "{} {} audit for {}",
+        "→".bold(),
+        label.yellow().bold(),
+        tx.cyan()
+    );
+    println!("{} {}\n", "→ Endpoint:".bold(), rpc.dimmed());
+
+    let pb = spinner(&format!("Fetching trace for {label} audit…"));
+    let client = NitroClient::new(rpc.to_string());
+
+    let report = client
+        .trace_transaction(&tx)
+        .await
+        .context("Failed to fetch trace — is the Arbitrum node running?")?;
+
+    pb.finish_with_message(format!(
+        "{} Trace captured ({} unified steps).",
+        "✔".green().bold(),
+        report.steps.len()
+    ));
+
+    match protocol {
+        Protocol::Aave => {
+            let pb2 = spinner("Applying Aave v3 + GHO protocol adapter…");
+
+            let trace_steps: Vec<TraceStep> = report
+                .steps
+                .iter()
+                .filter(|s| s.vm == VmKind::Evm)
+                .filter_map(|s| s.evm.as_ref())
+                .map(bridge_raw_to_trace_step)
+                .collect();
+
+            let tracer = AaveDeepTracer::new();
+            let liq = tracer
+                .analyze_liquidation(&tx, &trace_steps)
+                .context("Aave adapter failed")?;
+
+            pb2.finish_with_message(format!("{} Aave v3 adapter complete.", "✔".green().bold()));
+            println!();
+            print_aave_report(&liq, &report);
+        }
+        Protocol::Lido => {
+            let pb2 = spinner("Applying Lido stETH protocol adapter…");
+
+            let trace_steps: Vec<TraceStep> = report
+                .steps
+                .iter()
+                .filter(|s| s.vm == VmKind::Evm)
+                .filter_map(|s| s.evm.as_ref())
+                .map(bridge_raw_to_trace_step)
+                .collect();
+
+            let tracer = LidoDeepTracer::new();
+            let res = tracer
+                .analyze_staking(&tx, &trace_steps)
+                .context("Lido adapter failed")?;
+
+            pb2.finish_with_message(format!(
+                "{} Lido stETH adapter complete.",
+                "✔".green().bold()
+            ));
+            println!();
+            print_lido_report(&res, &report);
+        }
+    }
+
+    Ok(())
+}
+
+// ─── Diff Command ─────────────────────────────────────────────────────────────
+
+async fn cmd_diff(rpc: &str, base: &str, target: &str) -> Result<()> {
+    let base = normalise_hash(base);
+    let target = normalise_hash(target);
+
+    println!(
+        "{} {} {} {}",
+        "→ Base:  ".bold(),
+        base.cyan(),
+        "Target:".bold(),
+        target.yellow()
+    );
+    println!("{} {}\n", "→ Endpoint:".bold(), rpc.dimmed());
+
+    let client = NitroClient::new(rpc.to_string());
+
+    let pb = spinner("Fetching both traces concurrently…");
+    let (base_report, target_report) = tokio::try_join!(
+        client.trace_transaction(&base),
+        client.trace_transaction(&target),
+    )
+    .context("Failed to fetch one or both traces")?;
+    pb.finish_with_message(format!("{} Both traces fetched.", "✔".green().bold()));
+
+    println!();
+
+    // Cost delta
+    let base_cost = base_report.total_unified_cost;
+    let target_cost = target_report.total_unified_cost;
+    let delta = target_cost - base_cost;
+    let pct = if base_cost > 0.0 {
+        delta / base_cost * 100.0
+    } else {
+        0.0
+    };
+
+    let div = "─".repeat(56).dimmed().to_string();
+    println!("{}", "  EXECUTION DIFF".bold().underline());
+    println!("{div}");
+    println!(
+        "  {:<30} {}",
+        "Base unified cost (gas):".bold(),
+        format!("{base_cost:.2}").green()
+    );
+    println!(
+        "  {:<30} {}",
+        "Target unified cost (gas):".bold(),
+        format!("{target_cost:.2}").yellow()
+    );
+    println!("{div}");
+
+    let sign = if delta >= 0.0 { "+" } else { "" };
+    let color = if delta > 0.0 {
+        format!("{sign}{delta:.2}").red().to_string()
+    } else if delta < 0.0 {
+        format!("{sign}{delta:.2}").green().to_string()
+    } else {
+        format!("{sign}{delta:.2}").dimmed().to_string()
+    };
+    println!(
+        "  {:<30} {} ({sign}{pct:.1}%)",
+        "Δ Unified Cost:".bold(),
+        color
+    );
+    println!("{div}");
+
+    // Step count comparison
+    let base_evm = evm_count(&base_report);
+    let tgt_evm = evm_count(&target_report);
+    println!(
+        "  {:<30} {} EVM | {} Stylus",
+        "Base steps:".bold(),
+        base_evm.to_string().green(),
+        base_report.stylus_steps().len().to_string().yellow()
+    );
+    println!(
+        "  {:<30} {} EVM | {} Stylus",
+        "Target steps:".bold(),
+        tgt_evm.to_string().green(),
+        target_report.stylus_steps().len().to_string().yellow()
+    );
+    println!("{div}");
+
+    Ok(())
+}
+
+// ─── Banner & Rendering ───────────────────────────────────────────────────────
+
+fn print_banner() {
+    println!(
+        "{}",
+        "╔════════════════════════════════════════════╗".dimmed()
+    );
+    println!(
+        "{} {} {}",
+        "║".dimmed(),
+        " 🏮  ATUPA  ·  Unified Execution Profiler  ".bold(),
+        "║".dimmed()
+    );
+    println!(
+        "{}",
+        "╚════════════════════════════════════════════╝".dimmed()
+    );
+    println!();
+}
+
+fn render_capture_summary(report: &StitchedReport) -> String {
+    let div = "─".repeat(56).dimmed().to_string();
+    let mut out = String::new();
+
+    out += &format!("{}\n", "  UNIFIED EXECUTION SUMMARY".bold().underline());
+    out += &format!("{div}\n");
+
+    out += &format!(
+        "  {:<34} {}\n",
+        "EVM Gas:".bold(),
+        report.total_evm_gas.to_string().green()
+    );
+    out += &format!(
+        "  {:<34} {}\n",
+        "Stylus Ink (raw):".bold(),
+        report.total_stylus_ink.to_string().yellow()
+    );
+    out += &format!(
+        "  {:<34} {}\n",
+        "  → Gas-equivalent (÷10,000):".dimmed(),
+        format!("{:.2}", report.total_stylus_gas_equiv).yellow()
+    );
+    out += &format!("{div}\n");
+    out += &format!(
+        "  {:<34} {}\n",
+        "Unified Cost (gas):".bold(),
+        format!("{:.2}", report.total_unified_cost)
+            .bold()
+            .bright_white()
+    );
+    out += &format!("{div}\n");
+
+    out += &format!(
+        "  {:<34} {}\n",
+        "EVM Steps:".bold(),
+        evm_count(report).to_string().green()
+    );
+    out += &format!(
+        "  {:<34} {}\n",
+        "Stylus HostIO Steps:".bold(),
+        report.stylus_steps().len().to_string().yellow()
+    );
+    out += &format!(
+        "  {:<34} {}\n",
+        "VM Boundary Crossings (EVM→WASM):".bold(),
+        report.vm_boundary_count.to_string().cyan().bold()
+    );
+    out += &format!("{div}\n");
+
+    // EVM→WASM boundary detail
+    if report.vm_boundary_count > 0 {
+        out += &format!("  {}\n", "EVM→WASM Boundary Crossings:".bold());
+        for (i, step) in report.boundary_steps().iter().take(5).enumerate() {
+            out += &format!(
+                "    {}  {} at depth {}\n",
+                format!("[{}]", i + 1).cyan(),
+                step.label.bold(),
+                step.depth.to_string().dimmed()
+            );
+        }
+        if report.vm_boundary_count > 5 {
+            out += &format!(
+                "    … and {} more\n",
+                (report.vm_boundary_count - 5).to_string().dimmed()
+            );
+        }
+        out += &format!("{div}\n");
+    }
+
+    // Top Stylus ink consumers
+    let mut stylus = report.stylus_steps();
+    stylus.sort_by(|a, b| b.cost_equiv.partial_cmp(&a.cost_equiv).unwrap());
+    if !stylus.is_empty() {
+        out += &format!("  {}\n", "🔥 Top Ink Consumers (Stylus HostIO):".bold());
+        for step in stylus.iter().take(5) {
+            out += &format!(
+                "    {:<36} {:>8.2} gas-equiv\n",
+                step.label.yellow(),
+                step.cost_equiv
+            );
+        }
+        out += &format!("{div}\n");
+    }
+
+    out += &format!("  tx  {}\n", report.tx_hash.dimmed());
+    out
+}
+
+fn print_aave_report(aave: &atupa_aave::LiquidationReport, nitro: &StitchedReport) {
+    let div = "─".repeat(56).dimmed().to_string();
+    println!("{}", "  AAVE v3 PROTOCOL AUDIT".bold().underline());
+    println!("{div}");
+
+    let rows: &[(&str, String)] = &[
+        ("Total Gas (Aave frame):", aave.total_gas.to_string()),
+        ("Liquidation Gas:", aave.liquidation_gas.to_string()),
+        ("Storage Reads (SLOAD):", aave.storage_reads.to_string()),
+        ("Storage Writes (SSTORE):", aave.storage_writes.to_string()),
+        ("External Calls:", aave.external_calls.to_string()),
+        ("Oracle Calls:", aave.oracle_calls.to_string()),
+        (
+            "Cross-VM Calls (Stylus):",
+            nitro.vm_boundary_count.to_string(),
+        ),
+        ("Max Call Depth:", aave.max_depth.to_string()),
+    ];
+    for (label, val) in rows {
+        println!("  {:<34} {}", label.bold(), val.cyan());
+    }
+    println!("{div}");
+
+    if !aave.labeled_calls.is_empty() {
+        println!("  {}", "Protocol Calls Detected:".bold());
+        for call in aave.labeled_calls.iter().take(10) {
+            println!(
+                "    {} {} {}",
+                format!("[depth={:>2}]", call.depth).dimmed(),
+                call.label.yellow(),
+                format!("({} gas)", call.gas_cost).dimmed()
+            );
+        }
+        println!("{div}");
+    }
+
+    println!(
+        "  {:<34} {}",
+        "Reverted:".bold(),
+        if aave.reverted {
+            "YES".red().bold().to_string()
+        } else {
+            "NO".green().to_string()
+        }
+    );
+    println!(
+        "  {:<34} {:.4}",
+        "Liquidation Efficiency:".bold(),
+        aave.liquidation_efficiency
+    );
+    println!("{div}");
+}
+
+fn print_lido_report(lido: &atupa_lido::LidoReport, nitro: &StitchedReport) {
+    let div = "─".repeat(56).dimmed().to_string();
+    println!("{}", "  LIDO stETH PROTOCOL AUDIT".bold().underline());
+    println!("{div}");
+
+    let rows: &[(&str, String)] = &[
+        ("Total Gas (Lido frame):", lido.total_gas.to_string()),
+        ("Staking Operations Gas:", lido.staking_gas.to_string()),
+        ("Shares Transfers:", lido.shares_transfers.to_string()),
+        ("Token Transfers:", lido.token_transfers.to_string()),
+        ("Oracle Updates:", lido.oracle_updates.to_string()),
+        ("Wrapped TXs (wstETH):", lido.wrapped_txs.to_string()),
+        (
+            "Cross-VM Calls (Stylus):",
+            nitro.vm_boundary_count.to_string(),
+        ),
+        ("Max Call Depth:", lido.max_depth.to_string()),
+    ];
+    for (label, val) in rows {
+        println!("  {:<34} {}", label.bold(), val.cyan());
+    }
+    println!("{div}");
+
+    if !lido.labeled_calls.is_empty() {
+        println!("  {}", "Protocol Calls Detected:".bold());
+        for call in lido.labeled_calls.iter().take(10) {
+            println!(
+                "    {} {} {}",
+                format!("[depth={:>2}]", call.depth).dimmed(),
+                call.label.yellow(),
+                format!("({} gas)", call.gas_cost).dimmed()
+            );
+        }
+        if lido.labeled_calls.len() > 10 {
+            println!(
+                "    ... and {} more",
+                (lido.labeled_calls.len() - 10).to_string().dimmed()
+            );
+        }
+        println!("{div}");
+    }
+
+    println!(
+        "  {:<34} {}",
+        "Reverted:".bold(),
+        if lido.reverted {
+            "YES".red().bold().to_string()
+        } else {
+            "NO".green().to_string()
+        }
+    );
+    println!("{div}");
+}
+
+// ─── Shared Utilities ─────────────────────────────────────────────────────────
+
+/// Normalise a transaction hash to lowercase 0x-prefixed form.
+fn normalise_hash(tx: &str) -> String {
+    let t = tx.trim();
+    if t.to_lowercase().starts_with("0x") {
+        t.to_lowercase()
+    } else {
+        format!("0x{}", t.to_lowercase())
+    }
+}
+
+fn evm_count(r: &StitchedReport) -> usize {
+    r.steps.iter().filter(|s| s.vm == VmKind::Evm).count()
+}
+
+/// Bridge `RawStructLog` (atupa-rpc) → `TraceStep` (atupa-core) for adapters
+/// that still operate on the lower-level type.
+fn bridge_raw_to_trace_step(raw: &RawStructLog) -> TraceStep {
+    TraceStep {
+        pc: raw.pc,
+        op: raw.op.clone(),
+        gas: raw.gas,
+        gas_cost: raw.gas_cost,
+        depth: raw.depth,
+        stack: raw.stack.clone(),
+        memory: raw.memory.clone(),
+        error: raw.error.clone(),
+        reverted: raw.error.is_some(),
+    }
+}
+
+fn spinner(msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    pb.enable_steady_tick(Duration::from_millis(80));
+    pb.set_message(msg.to_string());
+    pb
+}

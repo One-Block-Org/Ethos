@@ -1,5 +1,5 @@
 [package]
-name = "atupa"
+name = "atupa-lido"
 version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
@@ -14,21 +14,8 @@ categories = { workspace = true }
 
 [dependencies]
 atupa-core = { workspace = true }
-atupa-rpc = { workspace = true }
-atupa-parser = { workspace = true }
 atupa-adapters = { workspace = true }
-atupa-output = { workspace = true }
-
-clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-env_logger = { workspace = true }
-indicatif = { workspace = true }
-colored = { workspace = true }
-
-[[bin]]
-name = "atupa"
-path = "src/main.rs"

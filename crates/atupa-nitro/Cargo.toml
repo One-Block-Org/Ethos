@@ -1,0 +1,24 @@
+[package]
+name = "atupa-nitro"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+readme = "README.md"
+homepage = { workspace = true }
+documentation = { workspace = true }
+description = "Arbitrum Nitro & Stylus unified tracing adapter for the Atupa engine"
+keywords = ["arbitrum", "nitro", "stylus", "tracing", "wasm"]
+categories = ["development-tools", "cryptography::cryptocurrencies"]
+
+[dependencies]
+atupa-core = { workspace = true }
+atupa-rpc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }

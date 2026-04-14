@@ -1,0 +1,45 @@
+[package]
+name        = "atupa"
+version     = { workspace = true }
+edition     = { workspace = true }
+authors     = { workspace = true }
+license     = { workspace = true }
+description = "atupa — Unified EVM + Stylus Execution Profiler CLI"
+
+# Two binary targets so the tool works both as a standalone command
+# and as a `cargo atupa` subcommand.
+[[bin]]
+name = "atupa"
+path = "src/main.rs"
+
+[[bin]]
+name = "cargo-atupa"
+path = "src/main.rs"
+
+[dependencies]
+# Atupa SDK
+atupa-sdk     = { workspace = true }
+atupa-core    = { workspace = true }
+atupa-nitro   = { workspace = true }
+atupa-rpc     = { workspace = true }
+atupa-aave    = { workspace = true }
+atupa-lido    = { workspace = true }
+atupa-parser  = { workspace = true }
+atupa-output  = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+
+# Serialization
+serde      = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging & UX
+anyhow    = { workspace = true }
+log         = { workspace = true }
+env_logger  = { workspace = true }
+colored     = { workspace = true }
+indicatif   = { workspace = true }

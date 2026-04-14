@@ -1,0 +1,33 @@
+[package]
+name = "atupa-sdk"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = { workspace = true }
+readme = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[dependencies]
+# SDK layers — fully re-exported as the public facade
+atupa-core     = { workspace = true }
+atupa-rpc      = { workspace = true }
+atupa-parser   = { workspace = true }
+atupa-adapters = { workspace = true }
+atupa-output   = { workspace = true }
+atupa-aave     = { workspace = true }
+atupa-lido     = { workspace = true }
+
+# Runtime deps needed by the high-level profile module
+tokio     = { workspace = true }
+anyhow    = { workspace = true }
+log       = { workspace = true }
+indicatif = { workspace = true }
+
+[lib]
+name = "atupa"
+path = "src/lib.rs"

@@ -148,11 +148,14 @@ name = "atupa"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "atupa-adapters",
+ "atupa-aave",
  "atupa-core",
+ "atupa-lido",
+ "atupa-nitro",
  "atupa-output",
  "atupa-parser",
  "atupa-rpc",
+ "atupa-sdk",
  "clap",
  "colored",
  "env_logger",
@@ -201,6 +204,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "atupa-lido"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atupa-adapters",
+ "atupa-core",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "atupa-nitro"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atupa-core",
+ "atupa-rpc",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "atupa-output"
 version = "0.1.0"
 dependencies = [
@@ -236,6 +266,23 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "atupa-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atupa-aave",
+ "atupa-adapters",
+ "atupa-core",
+ "atupa-lido",
+ "atupa-output",
+ "atupa-parser",
+ "atupa-rpc",
+ "indicatif",
+ "log",
  "tokio",
 ]
 
