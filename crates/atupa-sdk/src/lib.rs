@@ -103,7 +103,7 @@ pub mod profile {
                 .filter_map(|s| s.evm.clone())
                 .collect();
             let evm_trace_steps = AtupaParser::normalize(
-                evm_raw.iter().cloned().collect(),
+                evm_raw.to_vec(),
             );
             let mut evm_stacks = Aggregator::build_collapsed_stacks(&evm_trace_steps);
 

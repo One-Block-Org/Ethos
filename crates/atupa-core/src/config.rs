@@ -11,6 +11,8 @@ pub struct AtupaConfig {
     pub etherscan_key: Option<String>,
     pub output_dir: String,
     pub studio_dir: Option<PathBuf>,
+    /// Port Atupa Studio's Vite dev-server will bind to (default: 5173).
+    pub studio_port: u16,
 }
 
 impl Default for AtupaConfig {
@@ -20,6 +22,7 @@ impl Default for AtupaConfig {
             etherscan_key: None,
             output_dir: ".".to_string(),
             studio_dir: None,
+            studio_port: 5173,
         }
     }
 }

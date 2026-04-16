@@ -1,0 +1,263 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 202" style="background-color:#0d1117">
+  <defs>
+    <!-- EVM gradient: sky-blue → indigo -->
+    <linearGradient id="grad-evm" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <!-- WASM gradient: amber → orange -->
+    <linearGradient id="grad-wasm" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <!-- Revert gradient: red -->
+    <linearGradient id="grad-revert" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f87171" />
+      <stop offset="100%" stop-color="#991b1b" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    .label   { font-family: 'Inter', 'Roboto Mono', monospace; fill: #f1f5f9; font-size: 11px; dominant-baseline: middle; pointer-events: none; }
+    .legend  { font-family: 'Inter', 'Roboto Mono', monospace; fill: #94a3b8; font-size: 10px; dominant-baseline: middle; }
+    .sep-txt { font-family: 'Inter', 'Roboto Mono', monospace; fill: #f59e0b; font-size: 10px; font-weight: 600; dominant-baseline: middle; letter-spacing: 0.08em; }
+    .box-evm   { fill: url(#grad-evm);    stroke: #1e3a5f; stroke-width: 0.5; }
+    .box-wasm  { fill: url(#grad-wasm);   stroke: #78350f; stroke-width: 0.5; }
+    .box-revert{ fill: url(#grad-revert); stroke: #7f1d1d; stroke-width: 0.5; }
+  </style>
+
+  <!-- Legend row -->
+  <rect x="10" y="8" width="12" height="12" rx="2" class="box-evm" />
+  <text x="26" y="14" class="legend">EVM opcode</text>
+  
+  <rect x="238" y="8" width="12" height="12" rx="2" class="box-revert" />
+  <text x="254" y="14" class="legend">Reverted</text>
+
+  <!-- Flame bars -->
+  
+  
+  <rect x="10" y="36" width="752.6530182618134" height="26" rx="4" class="box-evm">
+    <title>CALL | depth 1 | 739016 gas (29.6%)</title>
+  </rect>
+  
+  <text x="16" y="49" class="label">CALL [0x726ef6be7c0cc038f6ec6e67061fe5cbbcfad3bf]</text>
+  
+  
+  
+  <rect x="763.6530182618134" y="36" width="219.85226651903758" height="26" rx="4" class="box-evm">
+    <title>STATICCALL | depth 1 | 216563 gas (8.7%)</title>
+  </rect>
+  
+  <text x="769.6530182618134" y="49" class="label">STATICCALL [WETH9]</text>
+  
+  
+  
+  <rect x="10" y="66" width="499.7357731477882" height="26" rx="4" class="box-evm">
+    <title>CALL | depth 2 | 525793 gas (21.0%)</title>
+  </rect>
+  
+  <text x="16" y="79" class="label">CALL [UniversalRouter]</text>
+  
+  
+  
+  <rect x="510.7357731477882" y="66" width="439.2638381404027" height="26" rx="4" class="box-evm">
+    <title>STATICCALL | depth 2 | 462295 gas (18.5%)</title>
+  </rect>
+  
+  <text x="516.7357731477882" y="79" class="label">STATICCALL [Paradaengi]</text>
+  
+  
+  
+  <rect x="950.9996112881909" y="66" width="9.666252040736998" height="26" rx="4" class="box-evm">
+    <title>SLOAD | depth 2 | 11200 gas (0.4%)</title>
+  </rect>
+  
+  
+  
+  <rect x="961.6658633289279" y="66" width="7.571095389877945" height="26" rx="4" class="box-evm">
+    <title>SSTORE | depth 2 | 9000 gas (0.4%)</title>
+  </rect>
+  
+  
+  
+  <rect x="970.2369587188059" y="66" width="1.6475161315400761" height="26" rx="4" class="box-evm">
+    <title>LOG3 | depth 2 | 2780 gas (0.1%)</title>
+  </rect>
+  
+  
+  
+  <rect x="972.884474850346" y="66" width="1.0199214802145686" height="26" rx="4" class="box-evm">
+    <title>PUSH1 | depth 2 | 2121 gas (0.1%)</title>
+  </rect>
+  
+  
+  
+  <rect x="10" y="96" width="840.2993801306751" height="26" rx="4" class="box-evm">
+    <title>CALL | depth 3 | 230589 gas (9.2%)</title>
+  </rect>
+  
+  <text x="16" y="109" class="label">CALL [Permit2]</text>
+  
+  
+  
+  <rect x="851.2993801306751" y="96" width="82.5501945235569" height="26" rx="4" class="box-evm">
+    <title>SSTORE | depth 3 | 22900 gas (0.9%)</title>
+  </rect>
+  
+  <text x="857.2993801306751" y="109" class="label">SSTORE (2…</text>
+  
+  
+  
+  <rect x="934.849574654232" y="96" width="22.71512071629344" height="26" rx="4" class="box-evm">
+    <title>SLOAD | depth 3 | 6500 gas (0.3%)</title>
+  </rect>
+  
+  
+  
+  <rect x="958.5646953705254" y="96" width="8.486048286517377" height="26" rx="4" class="box-evm">
+    <title>EXTCODESIZE | depth 3 | 2600 gas (0.1%)</title>
+  </rect>
+  
+  
+  
+  <rect x="968.0507436570429" y="96" width="5.4067310735094285" height="26" rx="4" class="box-evm">
+    <title>LOG3 | depth 3 | 1756 gas (0.1%)</title>
+  </rect>
+  
+  
+  
+  <rect x="974.4574747305522" y="96" width="1.6633904804452637" height="26" rx="4" class="box-evm">
+    <title>JUMPI | depth 3 | 730 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="10" y="126" width="965.5869925288977" height="26" rx="4" class="box-evm">
+    <title>CALL | depth 4 | 223901 gas (9.0%)</title>
+  </rect>
+  
+  <text x="16" y="139" class="label">CALL [Paradaengi]</text>
+  
+  
+  
+  <rect x="976.5869925288977" y="126" width="8.065759797011559" height="26" rx="4" class="box-evm">
+    <title>SLOAD | depth 4 | 2100 gas (0.1%)</title>
+  </rect>
+  
+  
+  
+  <rect x="10" y="156" width="426.0152505446623" height="26" rx="4" class="box-evm">
+    <title>SSTORE | depth 5 | 5800 gas (0.2%)</title>
+  </rect>
+  
+  <text x="16" y="169" class="label">SSTORE (5800 gas)</text>
+  
+  
+  
+  <rect x="437.0152505446623" y="156" width="315.5802719555255" height="26" rx="4" class="box-evm">
+    <title>SLOAD | depth 5 | 4300 gas (0.2%)</title>
+  </rect>
+  
+  <text x="443.0152505446623" y="169" class="label">SLOAD (4300 gas)</text>
+  
+  
+  
+  <rect x="753.5955225001878" y="156" width="128.28254826834947" height="26" rx="4" class="box-evm">
+    <title>LOG3 | depth 5 | 1756 gas (0.1%)</title>
+  </rect>
+  
+  <text x="759.5955225001878" y="169" class="label">LOG3 (1756 gas)</text>
+  
+  
+  
+  <rect x="882.8780707685373" y="156" width="14.460897002479152" height="26" rx="4" class="box-evm">
+    <title>KECCAK256 | depth 5 | 210 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="898.3389677710164" y="156" width="12.914807302231237" height="26" rx="4" class="box-evm">
+    <title>PUSH1 | depth 5 | 189 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="912.2537750732477" y="156" width="10.779731049507927" height="26" rx="4" class="box-evm">
+    <title>JUMPI | depth 5 | 160 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="924.0335061227556" y="156" width="8.42378483960634" height="26" rx="4" class="box-evm">
+    <title>JUMP | depth 5 | 128 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="933.457290962362" y="156" width="6.067838629704756" height="26" rx="4" class="box-evm">
+    <title>PUSH2 | depth 5 | 96 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="940.5251295920667" y="156" width="3.638269100743746" height="26" rx="4" class="box-evm">
+    <title>SWAP1 | depth 5 | 63 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="945.1633986928105" y="156" width="2.975659229208925" height="26" rx="4" class="box-evm">
+    <title>MSTORE | depth 5 | 54 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="949.1390579220193" y="156" width="2.533919314852378" height="26" rx="4" class="box-evm">
+    <title>SUB | depth 5 | 48 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="952.6729772368717" y="156" width="2.533919314852378" height="26" rx="4" class="box-evm">
+    <title>DUP2 | depth 5 | 48 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="956.2068965517241" y="156" width="2.23942603861468" height="26" rx="4" class="box-evm">
+    <title>POP | depth 5 | 44 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="959.4463225903387" y="156" width="1.871309443317557" height="26" rx="4" class="box-evm">
+    <title>AND | depth 5 | 39 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="962.3176320336563" y="156" width="1.650439486139283" height="26" rx="4" class="box-evm">
+    <title>DUP1 | depth 5 | 36 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="964.9680715197956" y="156" width="1.650439486139283" height="26" rx="4" class="box-evm">
+    <title>SHL | depth 5 | 36 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="967.6185110059348" y="156" width="1.4295695289610095" height="26" rx="4" class="box-evm">
+    <title>DUP4 | depth 5 | 33 gas (0.0%)</title>
+  </rect>
+  
+  
+  
+  <rect x="970.0480805348958" y="156" width="1.208699571782736" height="26" rx="4" class="box-evm">
+    <title>JUMPDEST | depth 5 | 30 gas (0.0%)</title>
+  </rect>
+  
+  
+
+</svg>

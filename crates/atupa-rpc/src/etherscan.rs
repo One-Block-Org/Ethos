@@ -42,12 +42,11 @@ fn flush_cache(cache: &HashMap<String, String>) {
     let Some(path) = cache_path() else { return };
 
     // Ensure the parent directory exists
-    if let Some(parent) = path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent) {
             log::warn!("⚠️  Could not create cache dir {:?}: {}", parent, e);
             return;
         }
-    }
 
     match serde_json::to_string_pretty(cache) {
         Ok(json) => {

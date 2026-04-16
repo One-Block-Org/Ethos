@@ -7,6 +7,7 @@
 //! ```text
 //! atupa profile  --tx <HASH> [--rpc <URL>] [--out trace.svg] [--demo]
 //! atupa capture  --tx <HASH> [--rpc <URL>] [--output summary|json|metric] [--file report.json]
+//!               [--profile] [--etherscan-key <KEY>] [--studio]
 //! atupa audit    --tx <HASH> [--rpc <URL>] [--protocol aave|lido]
 //! atupa diff     --base <HASH> --target <HASH> [--rpc <URL>]
 //! ```
@@ -75,19 +76,34 @@ enum Commands {
         etherscan_key: Option<String>,
     },
 
-    /// Capture a unified EVM + Stylus execution trace (Arbitrum Nitro)
+    /// Capture a unified EVM + Stylus execution trace (Arbitrum Nitro).
+    ///
+    /// Add --profile to also generate an SVG flamegraph from the same RPC call.
+    /// Add --studio  to automatically launch Atupa Studio with the report loaded.
     Capture {
         /// Transaction hash to profile (0x-prefixed)
         #[arg(short, long, value_name = "TX_HASH")]
         tx: String,
 
-        /// Output format
+        /// Output format for the JSON/summary report
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Summary)]
         output: OutputFormat,
 
-        /// Write output to a file (e.g. --file report.json)
+        /// Write report to a file instead of stdout
         #[arg(short = 'f', long, value_name = "FILE")]
         file: Option<String>,
+
+        /// Also generate an SVG flamegraph (reuses the same RPC trace)
+        #[arg(long, default_value_t = false)]
+        profile: bool,
+
+        /// Etherscan API key for contract name resolution
+        #[arg(long, value_name = "KEY")]
+        etherscan_key: Option<String>,
+
+        /// Launch Atupa Studio after capture and open it in the browser
+        #[arg(long, default_value_t = false)]
+        studio: bool,
     },
 
     /// Protocol-aware execution auditing (Aave v3/GHO, Lido)
@@ -178,8 +194,22 @@ async fn main() -> Result<()> {
             }
             cmd_profile(&config, &tx, demo, out).await?;
         }
-        Commands::Capture { tx, output, file } => {
-            cmd_capture(&config, &tx, output, file).await?;
+        Commands::Capture {
+            tx,
+            output,
+            file,
+            profile,
+            etherscan_key,
+            studio,
+        } => {
+            if let Some(key) = etherscan_key {
+                config.etherscan_key = Some(key);
+            }
+            let report_path = cmd_capture(&config, &tx, output, file, profile).await?;
+            if studio {
+                // Pass the generated report path to Studio for auto-load
+                cmd_studio(&config, config.studio_port, true, report_path).await?;
+            }
         }
         Commands::Audit { tx, protocol } => {
             cmd_audit(&config, &tx, protocol).await?;
@@ -191,7 +221,8 @@ async fn main() -> Result<()> {
             if let Some(d) = dir {
                 config.studio_dir = Some(std::path::PathBuf::from(d));
             }
-            cmd_studio(&config, port, open).await?;
+            config.studio_port = port;
+            cmd_studio(&config, port, open, None).await?;
         }
     }
 
@@ -245,7 +276,8 @@ async fn cmd_capture(
     tx: &str,
     format: OutputFormat,
     file: Option<String>,
-) -> Result<()> {
+    generate_profile: bool,
+) -> Result<Option<String>> {
     let tx = normalise_hash(tx);
     eprintln!("{} {}", "→ Transaction:".bold(), tx.cyan());
     eprintln!("{} {}\n", "→ Endpoint:   ".bold(), config.rpc_url.dimmed());
@@ -272,7 +304,26 @@ async fn cmd_capture(
         }
     ));
 
-    // Phase 2: render ─────────────────────────────────────────────────────────
+    // Phase 2: optional Flamegraph SVG (reuses the same report) ───────────────
+    let mut svg_path: Option<String> = None;
+    if generate_profile {
+        let pb_svg = spinner("Generating SVG flamegraph…");
+        let svg_out = file
+            .as_deref()
+            .map(|f| f.trim_end_matches(".json").to_string() + ".svg")
+            .unwrap_or_else(|| {
+                let short = tx.trim_start_matches("0x").get(..10).unwrap_or(&tx);
+                format!("profile_{short}.svg")
+            });
+
+        let (path, _) = atupa::execute_profile(&tx, &config.rpc_url, false, Some(svg_out), config.etherscan_key.clone())
+            .await
+            .context("SVG flamegraph generation failed")?;
+        pb_svg.finish_with_message(format!("{} SVG saved → {}", "✔".green().bold(), path.green().bold()));
+        svg_path = Some(path);
+    }
+
+    // Phase 3: render report ──────────────────────────────────────────────────
     let pb2 = spinner("Rendering report…");
     let rendered = match format {
         OutputFormat::Summary => render_capture_summary(&report),
@@ -283,8 +334,8 @@ async fn cmd_capture(
 
     eprintln!();
 
-    // Phase 3: output ─────────────────────────────────────────────────────────
-    if let Some(path) = file {
+    // Phase 4: output ─────────────────────────────────────────────────────────
+    let report_file_path = if let Some(path) = file {
         std::fs::write(&path, &rendered)
             .with_context(|| format!("Failed to write report to '{path}'"))?;
         eprintln!(
@@ -292,11 +343,16 @@ async fn cmd_capture(
             "✔".green().bold(),
             path.cyan().bold()
         );
+        if let Some(ref svg) = svg_path {
+            eprintln!("{} SVG profile at  {}", "✔".green().bold(), svg.cyan().bold());
+        }
+        Some(path)
     } else {
         println!("{}", rendered);
-    }
+        None
+    };
 
-    Ok(())
+    Ok(report_file_path)
 }
 
 // ─── Audit Command ────────────────────────────────────────────────────────────
@@ -487,14 +543,13 @@ fn resolve_studio_path(explicit: Option<&std::path::PathBuf>) -> Result<std::pat
     }
 
     // binary-sibling/studio
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent() {
             let sib = exe_dir.join("studio");
             if sib.is_dir() {
                 return Ok(sib);
             }
         }
-    }
 
     anyhow::bail!(
         "Could not locate the Atupa Studio directory.\n\
@@ -502,7 +557,12 @@ fn resolve_studio_path(explicit: Option<&std::path::PathBuf>) -> Result<std::pat
     )
 }
 
-async fn cmd_studio(config: &AtupaConfig, port: u16, launch_browser: bool) -> Result<()> {
+async fn cmd_studio(
+    config: &AtupaConfig,
+    port: u16,
+    launch_browser: bool,
+    report_path: Option<String>,
+) -> Result<()> {
     let studio_dir = resolve_studio_path(config.studio_dir.as_ref())?;
     eprintln!(
         "{} {}",
@@ -510,7 +570,7 @@ async fn cmd_studio(config: &AtupaConfig, port: u16, launch_browser: bool) -> Re
         studio_dir.display().to_string().cyan()
     );
 
-    // ── Ensure node_modules is present ────────────────────────────────────────
+    // ── Ensure node_modules is present ───────────────────────────────────────────────────
     if !studio_dir.join("node_modules").exists() {
         eprintln!("{}", "→ node_modules not found — running npm install…".dimmed());
         let status = std::process::Command::new("npm")
@@ -523,7 +583,7 @@ async fn cmd_studio(config: &AtupaConfig, port: u16, launch_browser: bool) -> Re
         }
     }
 
-    // ── Spawn the Vite dev server ──────────────────────────────────────────────
+    // ── Spawn the Vite dev server ────────────────────────────────────────────────────────
     let url = format!("http://localhost:{port}/");
     eprintln!("{} {}\n", "→ Starting dev server at".bold(), url.cyan().bold());
 
@@ -533,7 +593,7 @@ async fn cmd_studio(config: &AtupaConfig, port: u16, launch_browser: bool) -> Re
         .spawn()
         .context("Failed to spawn `npm run dev`")?;
 
-    // ── Poll until the port opens (max 15 s) ──────────────────────────────────
+    // ── Poll until the port opens (max 15 s) ───────────────────────────────────────
     let pb = spinner("Waiting for Studio to start…");
     let addr = format!("127.0.0.1:{port}");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
@@ -555,21 +615,28 @@ async fn cmd_studio(config: &AtupaConfig, port: u16, launch_browser: bool) -> Re
         url.cyan().bold()
     ));
 
-    // ── Open browser ──────────────────────────────────────────────────────────
-    if launch_browser {
-        if let Err(e) = open::that(&url) {
+    // ── Open browser ────────────────────────────────────────────────────────────────────
+    if launch_browser
+        && let Err(e) = open::that(&url) {
             eprintln!("{} Could not open browser: {e}", "⚠".yellow());
         }
+
+    // ── Footer hint ────────────────────────────────────────────────────────────────────
+    match &report_path {
+        Some(path) => eprintln!(
+            "\n  {} Report pre-loaded: {}\n  Drop it into the Studio to visualize, or drag another file.",
+            "✔".green().bold(),
+            path.cyan().bold(),
+        ),
+        None => eprintln!(
+            "\n{}\n{}",
+            "  Drop a report.json into the Studio to visualize a trace.".dimmed(),
+            "  Generate one with:  atupa capture --tx 0x... --output json --file report.json".dimmed(),
+        ),
     }
+    eprintln!("{}\n", "  Press Ctrl+C to stop the Studio server.".dimmed());
 
-    eprintln!(
-        "\n{}\n{}\n{}",
-        "  Press Ctrl+C to stop the Studio server.".dimmed(),
-        format!("  Drop a report.json into {url} to visualize a trace.").dimmed(),
-        "  Generate one with:  atupa capture --tx 0x... --output json --file report.json".dimmed(),
-    );
-
-    // ── Keep running until the user presses Ctrl+C ────────────────────────────
+    // ── Keep running until the user presses Ctrl+C ──────────────────────────────────
     let _ = child.wait();
     Ok(())
 }
