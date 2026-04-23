@@ -363,13 +363,17 @@ async fn cmd_capture(
 
     // Phase 3: render report ──────────────────────────────────────────────────
     let pb2 = spinner("Rendering report…");
+    let summary_text = render_capture_summary(&report);
+    
     let rendered = match format {
-        OutputFormat::Summary => render_capture_summary(&report),
+        OutputFormat::Summary => summary_text.clone(),
         OutputFormat::Json => serde_json::to_string_pretty(&report)?,
         OutputFormat::Metric => format!("{:.4}", report.total_unified_cost),
     };
     pb2.finish_with_message(format!("{} Report ready.", "✔".green().bold()));
 
+    eprintln!();
+    println!("{}", summary_text);
     eprintln!();
 
     // Phase 4: output ─────────────────────────────────────────────────────────
