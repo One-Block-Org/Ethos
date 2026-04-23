@@ -26,6 +26,9 @@ use atupa_core::TraceStep;
 use atupa_core::config::AtupaConfig;
 use atupa_lido::LidoDeepTracer;
 use atupa_nitro::{NitroClient, StitchedReport, VmKind};
+use atupa_output::SvgGenerator;
+use atupa_parser::Parser as TraceParser;
+use atupa_parser::aggregator::Aggregator;
 use atupa_rpc::RawStructLog;
  
  mod studio;
@@ -341,10 +344,18 @@ async fn cmd_capture(
         ));
     }
 
-    // Phase 2: optional Flamegraph SVG (reuses the same report) ───────────────
+    // Phase 2: optional Flamegraph SVG (built from already-fetched report — no second RPC call) ──
     let mut svg_path: Option<String> = None;
     if generate_profile {
         let pb_svg = spinner("Generating SVG flamegraph…");
+
+        // Convert report steps → collapsed stacks → SVG (zero extra RPC calls)
+        let trace_steps: Vec<atupa_core::TraceStep> = report.steps.iter().map(|s| s.to_trace_step()).collect();
+        let normalized = TraceParser::normalize_raw(trace_steps);
+        let stacks = Aggregator::build_collapsed_stacks(&normalized);
+        let svg = SvgGenerator::generate_flamegraph(&stacks)
+            .context("SVG flamegraph generation failed")?;
+
         let svg_suggestion = file.as_ref().map(|f| {
             if f.ends_with(".json") {
                 f.trim_end_matches(".json").to_string() + ".svg"
@@ -353,12 +364,11 @@ async fn cmd_capture(
             }
         });
         let svg_out = resolve_artifact_path(svg_suggestion, "capture", &tx, "svg");
+        std::fs::write(&svg_out, svg)
+            .with_context(|| format!("Failed to write SVG to '{svg_out}'"))?;
 
-        let (path, _) = atupa::execute_profile(&tx, &config.rpc_url, false, Some(svg_out), config.etherscan_key.clone())
-            .await
-            .context("SVG flamegraph generation failed")?;
-        pb_svg.finish_with_message(format!("{} SVG saved → {}", "✔".green().bold(), path.green().bold()));
-        svg_path = Some(path);
+        pb_svg.finish_with_message(format!("{} SVG saved → {}", "✔".green().bold(), svg_out.green().bold()));
+        svg_path = Some(svg_out);
     }
 
     // Phase 3: render report ──────────────────────────────────────────────────
