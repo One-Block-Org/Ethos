@@ -573,6 +573,7 @@ async fn cmd_audit(config: &AtupaConfig, tx: &str, protocol: Protocol) -> Result
 // ─── Diff Command ─────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::collapsible_if)]
 async fn cmd_diff(
     config: &AtupaConfig,
     base: &str,
@@ -640,26 +641,6 @@ async fn cmd_diff(
     let target_intrinsic = target_total_gas.saturating_sub(target_unified_cost as u64);
 
     let div = "─".repeat(70).dimmed().to_string();
-
-    if output_format == OutputFormat::Json {
-        let diff_report = serde_json::json!({
-            "type": "diff",
-            "base": base_report,
-            "target": target_report,
-            "metrics": {
-                "base_total_gas": base_total_gas,
-                "target_total_gas": target_total_gas,
-                "gas_delta": total_gas_delta,
-                "gas_pct": total_gas_pct,
-                "base_unified_cost": base_unified_cost,
-                "target_unified_cost": target_unified_cost,
-                "unified_delta": unified_delta,
-                "unified_pct": unified_pct,
-            }
-        });
-        println!("{}", serde_json::to_string_pretty(&diff_report)?);
-        return Ok(());
-    }
 
     println!("{}", "  EXECUTION DIFF".bold().underline());
     println!("{div}");
@@ -932,52 +913,82 @@ async fn cmd_diff(
     } else if let Some(ref cfg) = config_toml {
         // TOML Config evaluation
         if let Some(diff_cfg) = &cfg.diff {
-            if let Some(max_total) = diff_cfg.max_total_gas_increase_percent
-                && total_gas_pct > max_total
-            {
-                failures.push(format!(
-                    "Total Gas increased by {:.1}% (limit: {:.1}%)",
-                    total_gas_pct, max_total
-                ));
+            if let Some(max_total) = diff_cfg.max_total_gas_increase_percent {
+                if total_gas_pct > max_total {
+                    failures.push(format!(
+                        "Total Gas increased by {:.1}% (limit: {:.1}%)",
+                        total_gas_pct, max_total
+                    ));
+                }
             }
-            if let Some(max_exec) = diff_cfg.max_execution_gas_increase_percent
-                && unified_pct > max_exec
-            {
-                failures.push(format!(
-                    "Execution Gas increased by {:.1}% (limit: {:.1}%)",
-                    unified_pct, max_exec
-                ));
+            if let Some(max_exec) = diff_cfg.max_execution_gas_increase_percent {
+                if unified_pct > max_exec {
+                    failures.push(format!(
+                        "Execution Gas increased by {:.1}% (limit: {:.1}%)",
+                        unified_pct, max_exec
+                    ));
+                }
             }
-            if let Some(max_evm) = diff_cfg.max_evm_steps_increase
-                && evm_delta > max_evm as f64
-            {
-                failures.push(format!(
-                    "EVM Steps increased by {:.0} (limit: {})",
-                    evm_delta, max_evm
-                ));
+            if let Some(max_evm) = diff_cfg.max_evm_steps_increase {
+                if evm_delta > max_evm as f64 {
+                    failures.push(format!(
+                        "EVM Steps increased by {:.0} (limit: {})",
+                        evm_delta, max_evm
+                    ));
+                }
             }
-            if let Some(max_stylus) = diff_cfg.max_stylus_calls_increase
-                && stylus_delta > max_stylus as f64
-            {
-                failures.push(format!(
-                    "Stylus Calls increased by {:.0} (limit: {})",
-                    stylus_delta, max_stylus
-                ));
+            if let Some(max_stylus) = diff_cfg.max_stylus_calls_increase {
+                if stylus_delta > max_stylus as f64 {
+                    failures.push(format!(
+                        "Stylus Calls increased by {:.0} (limit: {})",
+                        stylus_delta, max_stylus
+                    ));
+                }
             }
         }
     }
 
-    if !failures.is_empty() {
-        println!("\n  {}", "❌ [FAILED] Regression detected:".red().bold());
-        for f in failures {
-            println!("     - {}", f.red());
+    // Final Output Handling
+    if output_format == OutputFormat::Json {
+        let diff_report = serde_json::json!({
+            "type": "diff",
+            "protocol": protocol.map(|p| format!("{:?}", p)),
+            "base": {
+                "tx_hash": base,
+                "report": base_report,
+            },
+            "target": {
+                "tx_hash": target,
+                "report": target_report,
+            },
+            "metrics": {
+                "base_total_gas": base_total_gas,
+                "target_total_gas": target_total_gas,
+                "gas_delta": total_gas_delta,
+                "gas_pct": total_gas_pct,
+                "base_unified_cost": base_unified_cost,
+                "target_unified_cost": target_unified_cost,
+                "unified_delta": unified_delta,
+                "unified_pct": unified_pct,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&diff_report)?);
+    } else {
+        if !failures.is_empty() {
+            println!("\n  {}", "❌ [FAILED] Regression detected:".red().bold());
+            for f in failures.iter() {
+                println!("     - {}", f.red());
+            }
+        } else if threshold.is_some() || config_toml.is_some() {
+            println!(
+                "\n  {} Execution cost within acceptable limits.",
+                "✅ [PASSED]".green().bold()
+            );
         }
+    }
+
+    if !failures.is_empty() {
         return Err(anyhow::anyhow!("Gas regression thresholds exceeded"));
-    } else if threshold.is_some() || config_toml.is_some() {
-        println!(
-            "\n  {} Execution cost within acceptable limits.",
-            "✅ [PASSED]".green().bold()
-        );
     }
 
     Ok(())
