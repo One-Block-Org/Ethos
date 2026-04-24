@@ -152,3 +152,39 @@ impl Profile {
         }
     }
 }
+
+// ─── Protocol Diff Structures ────────────────────────────────────────────────
+
+/// A field-by-field delta between two protocol executions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolDiffReport {
+    pub protocol: String,
+    pub rows: Vec<DiffRow>,
+}
+
+/// A single comparable metric row for protocol-level diffing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffRow {
+    pub metric: String,
+    pub base: f64,
+    pub target: f64,
+    pub delta: f64,
+    pub pct: f64,
+    /// true = a larger value is bad (gas, reads, calls), false = larger is better
+    pub higher_is_worse: bool,
+}
+
+impl DiffRow {
+    pub fn new(metric: &str, base: f64, target: f64, higher_is_worse: bool) -> Self {
+        let delta = target - base;
+        let pct = if base > 0.0 { delta / base * 100.0 } else { 0.0 };
+        Self {
+            metric: metric.to_string(),
+            base,
+            target,
+            delta,
+            pct,
+            higher_is_worse,
+        }
+    }
+}

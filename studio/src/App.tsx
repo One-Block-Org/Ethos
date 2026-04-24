@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import './styles/design-system.css';
-import type { StitchedReport } from './types/trace';
 import {
   aggregateHostIOs,
   fmtGas,
@@ -8,6 +7,8 @@ import {
   shortHash,
   evmSteps,
   stylusSteps,
+  StudioReport,
+  isDiff,
 } from './types/trace';
 import { reportToTree } from './types/reportToTree';
 import { DragDropZone } from './components/DragDropZone';
@@ -16,15 +17,16 @@ import { HostIoAggregator } from './components/HostIoAggregator';
 import { TraceInspector } from './components/TraceInspector';
 import { FlameGraph } from './components/FlameGraph';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
+import { DiffOverview } from './components/DiffOverview';
 
 type View = 'overview' | 'flame' | 'trace' | 'hostio';
 
 export default function App() {
-  const [report, setReport] = useState<StitchedReport | null>(null);
+  const [report, setReport] = useState<StudioReport | null>(null);
   const [view, setView] = useState<View>('overview');
   const [flameSearch, setFlameSearch] = useState('');
 
-  const handleLoad = useCallback((r: StitchedReport) => {
+  const handleLoad = useCallback((r: StudioReport) => {
     setReport(r);
     setView('overview');
   }, []);
@@ -71,10 +73,10 @@ export default function App() {
           <>
             <span className="live-badge">
               <span className="live-dot" />
-              Loaded
+              {isDiff(report) ? 'Comparison Loaded' : 'Single Trace Loaded'}
             </span>
-            <span className="topbar-tx" title={report.tx_hash}>
-              {report.tx_hash}
+            <span className="topbar-tx" title={isDiff(report) ? `${report.base.tx_hash} vs ${report.target.tx_hash}` : report.tx_hash}>
+              {isDiff(report) ? 'Execution Comparison' : report.tx_hash}
             </span>
             <button
               id="btn-reset"
@@ -123,12 +125,21 @@ export default function App() {
           );
         })}
 
-        {report && (
+        {report && !isDiff(report) && (
           <div className="sidebar-meta">
             <div>tx: {shortHash(report.tx_hash)}</div>
             <div>steps: {report.steps.length.toLocaleString()}</div>
             <div>evm: {evmSteps(report).length.toLocaleString()}</div>
             <div>wasm: {stylusSteps(report).length.toLocaleString()}</div>
+          </div>
+        )}
+
+        {report && isDiff(report) && (
+          <div className="sidebar-meta">
+            <div style={{ color: 'var(--color-text-primary)', fontWeight: 'bold' }}>⚖️ DELTA</div>
+            <div style={{ color: report.metrics.gas_delta > 0 ? '#ff4d4d' : '#4dff88' }}>
+              Gas: {report.metrics.gas_delta > 0 ? '+' : ''}{fmtGas(report.metrics.gas_delta)}
+            </div>
           </div>
         )}
       </nav>
@@ -141,14 +152,20 @@ export default function App() {
           <>
             {view === 'overview' && (
               <>
-                {/* Section: Cost Breakdown */}
-                <div className="glass-card">
-                  <div className="section-header">
-                    <span className="section-title">Cost Breakdown by Category</span>
-                    <div className="section-divider" />
-                  </div>
-                  <CategoryBreakdown report={report} />
-                </div>
+                {isDiff(report) ? (
+                  <DiffOverview report={report} />
+                ) : (
+                  <>
+                    {/* Section: Cost Breakdown */}
+                    <div className="glass-card">
+                      <div className="section-header">
+                        <span className="section-title">Cost Breakdown by Category</span>
+                        <div className="section-divider" />
+                      </div>
+                      <CategoryBreakdown report={report} />
+                    </div>
+                  </>
+                )}
 
                 {/* Section: Metrics */}
                 <div className="glass-card">

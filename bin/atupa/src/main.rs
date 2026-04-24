@@ -151,6 +151,10 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         svg: bool,
 
+        /// Output format (summary | json | markdown)
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Summary)]
+        output: OutputFormat,
+
         /// Optional: Run DeepTracer on both and diff heuristics
         #[arg(short, long, value_enum)]
         protocol: Option<Protocol>,
@@ -564,6 +568,7 @@ async fn cmd_diff(
     diff_config: Option<String>,
     markdown: bool,
     svg: bool,
+    output_format: OutputFormat,
     protocol: Option<Protocol>,
 ) -> Result<()> {
     let base = normalise_hash(base);
@@ -622,6 +627,27 @@ async fn cmd_diff(
     let target_intrinsic = if target_total_gas > target_unified_cost as u64 { target_total_gas - target_unified_cost as u64 } else { 0 };
 
     let div = "─".repeat(70).dimmed().to_string();
+    
+    if output_format == OutputFormat::Json {
+        let diff_report = serde_json::json!({
+            "type": "diff",
+            "base": base_report,
+            "target": target_report,
+            "metrics": {
+                "base_total_gas": base_total_gas,
+                "target_total_gas": target_total_gas,
+                "gas_delta": total_gas_delta,
+                "gas_pct": total_gas_pct,
+                "base_unified_cost": base_unified_cost,
+                "target_unified_cost": target_unified_cost,
+                "unified_delta": unified_delta,
+                "unified_pct": unified_pct,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&diff_report)?);
+        return Ok(());
+    }
+
     println!("{}", "  EXECUTION DIFF".bold().underline());
     println!("{div}");
     
@@ -701,7 +727,7 @@ async fn cmd_diff(
     println!("{div}");
 
     // ── Protocol Deep Diff (opt-in) ──────────────────────────────────────────
-    let mut proto_diff_rows: Vec<atupa_aave::DiffRow> = Vec::new();
+    let mut proto_diff_rows: Vec<atupa_core::DiffRow> = Vec::new();
     let mut proto_name = String::new();
 
     if let Some(ref proto) = protocol {
@@ -714,8 +740,7 @@ async fn cmd_diff(
                 tracer.diff_reports(&base, &base_steps, &target, &target_steps)
             }
             Protocol::Lido => {
-                // Lido deep diff — fallback to Aave engine for now (same storage pattern)
-                let tracer = AaveDeepTracer::new();
+                let tracer = LidoDeepTracer::new();
                 tracer.diff_reports(&base, &base_steps, &target, &target_steps)
             }
         };
@@ -1221,11 +1246,14 @@ fn print_lido_report(lido: &atupa_lido::LidoReport, nitro: &StitchedReport, top_
 
     let rows: &[(&str, String)] = &[
         ("Total Gas (Lido frame):", lido.total_gas.to_string()),
-        ("Staking Operations Gas:", lido.staking_gas.to_string()),
+        ("Storage Reads (SLOAD):", lido.storage_reads.to_string()),
+        ("Storage Writes (SSTORE):", lido.storage_writes.to_string()),
+        ("External Calls:", lido.external_calls.to_string()),
         ("Shares Transfers:", lido.shares_transfers.to_string()),
-        ("Token Transfers:", lido.token_transfers.to_string()),
-        ("Oracle Updates:", lido.oracle_updates.to_string()),
-        ("Wrapped TXs (wstETH):", lido.wrapped_txs.to_string()),
+        ("Oracle Reports:", lido.oracle_reports.to_string()),
+        ("Withdrawal Requests:", lido.withdrawal_requests.to_string()),
+        ("Withdrawal Claims:", lido.withdrawal_claims.to_string()),
+        ("Wrapped Ops (wstETH):", lido.wrapped_ops.to_string()),
         (
             "Cross-VM Calls (Stylus):",
             nitro.vm_boundary_count.to_string(),

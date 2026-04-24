@@ -38,6 +38,28 @@ export interface StitchedReport {
   resolved_names: Record<string, string>;
 }
 
+export interface DiffReport {
+  type: 'diff';
+  base: StitchedReport;
+  target: StitchedReport;
+  metrics: {
+    base_total_gas: number;
+    target_total_gas: number;
+    gas_delta: number;
+    gas_pct: number;
+    base_unified_cost: number;
+    target_unified_cost: number;
+    unified_delta: number;
+    unified_pct: number;
+  };
+}
+
+export type StudioReport = StitchedReport | DiffReport;
+
+export function isDiff(report: StudioReport): report is DiffReport {
+  return (report as any).type === 'diff';
+}
+
 export function getDisplayLabel(step: UnifiedStep, report: StitchedReport): string {
   if (step.target_address && report.resolved_names[step.target_address]) {
     return `${step.label} → ${report.resolved_names[step.target_address]}`;

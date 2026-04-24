@@ -41,6 +41,10 @@ inputs:
     description: 'Upload the SVG flamegraph as a workflow artifact (true | false)'
     required: false
     default: 'true'
+  upload_json:
+    description: 'Upload the raw JSON trace reports for Atupa Studio (true | false)'
+    required: false
+    default: 'false'
 
 # ─── Outputs ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +102,11 @@ runs:
           CONFIG_FLAG="--config ${{ inputs.config }}"
         fi
 
+        JSON_FLAG=""
+        if [ "${{ inputs.upload_json }}" = "true" ]; then
+          JSON_FLAG="--output json"
+        fi
+
         # Run the diff, allow non-zero exit so we can post the comment before failing
         atupa diff \
           -r "${{ inputs.rpc_url }}" \
@@ -107,7 +116,8 @@ runs:
           --svg \
           $PROTO_FLAG \
           $THRESHOLD_FLAG \
-          $CONFIG_FLAG && REGRESSION=false || REGRESSION=true
+          $CONFIG_FLAG \
+          $JSON_FLAG && REGRESSION=false || REGRESSION=true
 
         # Discover output paths
         BASE_SHORT="${{ inputs.base_tx }}"
@@ -126,6 +136,16 @@ runs:
       with:
         name: atupa-flamegraph-${{ inputs.base_tx != '' && inputs.base_tx || 'base' }}
         path: ${{ steps.diff.outputs.svg_path }}
+        if-no-files-found: warn
+        retention-days: 30
+
+    # 3.5 Upload JSON Reports for Atupa Studio
+    - name: Upload JSON Reports
+      if: inputs.upload_json == 'true' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: atupa-reports-${{ inputs.base_tx != '' && inputs.base_tx || 'base' }}
+        path: artifacts/reports/
         if-no-files-found: warn
         retention-days: 30
 

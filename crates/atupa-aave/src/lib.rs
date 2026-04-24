@@ -5,7 +5,7 @@
 //! mechanics, and GHO stablecoin risk monitoring.
 
 use atupa_adapters::ProtocolAdapter;
-use atupa_core::TraceStep;
+use atupa_core::{DiffRow, ProtocolDiffReport, TraceStep};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -178,44 +178,6 @@ pub struct LabeledCall {
     pub depth: u16,
     pub label: String,
     pub gas_cost: u64,
-}
-
-// ---------------------------------------------------------------------------
-// Protocol Diff Report
-// ---------------------------------------------------------------------------
-
-/// A field-by-field delta between two Aave protocol executions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProtocolDiffReport {
-    pub protocol: String,
-    pub rows: Vec<DiffRow>,
-}
-
-/// A single comparable metric row.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiffRow {
-    pub metric: String,
-    pub base: f64,
-    pub target: f64,
-    pub delta: f64,
-    pub pct: f64,
-    /// true = a larger value is bad (gas, reads, calls), false = larger is better
-    pub higher_is_worse: bool,
-}
-
-impl DiffRow {
-    fn new(metric: &str, base: f64, target: f64, higher_is_worse: bool) -> Self {
-        let delta = target - base;
-        let pct = if base > 0.0 { delta / base * 100.0 } else { 0.0 };
-        Self {
-            metric: metric.to_string(),
-            base,
-            target,
-            delta,
-            pct,
-            higher_is_worse,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

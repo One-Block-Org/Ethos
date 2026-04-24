@@ -185,9 +185,11 @@ jobs:
           base_tx:      ${{ steps.hashes.outputs.base }}
           target_tx:    ${{ steps.hashes.outputs.target }}
           rpc_url:      'http://127.0.0.1:${{ env.ANVIL_PORT }}'
+          protocol:     '${{ vars.ATUPA_PROTOCOL || '' }}'
           config:       'atupa.toml'
           post_comment: 'true'
           upload_svg:   'true'
+          upload_json:  'true'
 "#;
 
 const FORGE_PROFILE_SCRIPT: &str = r#"// SPDX-License-Identifier: MIT
@@ -296,6 +298,25 @@ pub fn detect_project() -> ProjectKind {
     ProjectKind::Unknown
 }
 
+pub fn detect_protocol() -> Option<String> {
+    // Check for common protocol keywords in project files
+    let keywords = [("lido", "lido"), ("aave", "aave"), ("gho", "aave")];
+    
+    // Check package.json or foundry.toml if they exist
+    let files = ["package.json", "foundry.toml", "Cargo.toml"];
+    for file in files {
+        if let Ok(content) = fs::read_to_string(file) {
+            let content_lower = content.to_lowercase();
+            for (kw, proto) in keywords {
+                if content_lower.contains(kw) {
+                    return Some(proto.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 // ─── Init Arguments ───────────────────────────────────────────────────────────
 
 pub struct InitArgs {
@@ -317,6 +338,16 @@ pub fn execute_init(args: InitArgs) -> Result<()> {
         "🔍 Detected project type:".bold(),
         kind.label().cyan().bold()
     );
+
+    // Attempt to detect protocol
+    let protocol = detect_protocol();
+    if let Some(p) = &protocol {
+        println!(
+            "  {} {}",
+            "💉 Detected protocol adapter:".bold(),
+            p.cyan().bold()
+        );
+    }
     println!();
 
     let mut created: Vec<String> = Vec::new();
