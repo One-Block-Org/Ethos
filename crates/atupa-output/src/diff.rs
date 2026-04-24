@@ -156,17 +156,34 @@ pub fn generate_diff_flamegraph(
     ));
 
     svg.push_str(
-        r##"<style>
-            .func { font: 12px Inter, monospace; transition: all 0.1s ease; } 
-            .func:hover { stroke: #ffffff; stroke-width: 1.5; cursor: pointer; filter: brightness(1.2); }
-            @keyframes slideIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-            rect { animation: slideIn 0.3s ease-out forwards; }
-        </style>"##
+        r##"  <defs>
+    <linearGradient id="grad-stable" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="grad-regress" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f87171" />
+      <stop offset="100%" stop-color="#991b1b" />
+    </linearGradient>
+    <linearGradient id="grad-improve" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="100%" stop-color="#166534" />
+    </linearGradient>
+  </defs>
+  <style>
+    .label   { font-family: 'Inter', 'Roboto Mono', monospace; fill: #f1f5f9; font-size: 11px; dominant-baseline: middle; pointer-events: none; }
+    .legend  { font-family: 'Inter', 'Roboto Mono', monospace; fill: #94a3b8; font-size: 10px; dominant-baseline: middle; }
+    .sep-txt { font-family: 'Inter', 'Roboto Mono', monospace; fill: #f59e0b; font-size: 10px; font-weight: 600; dominant-baseline: middle; letter-spacing: 0.08em; }
+    .box-stable { fill: url(#grad-stable); stroke: #0f172a; stroke-width: 0.5; transition: all 0.1s ease; }
+    .box-regress{ fill: url(#grad-regress); stroke: #7f1d1d; stroke-width: 0.5; transition: all 0.1s ease; }
+    .box-improve{ fill: url(#grad-improve); stroke: #14532d; stroke-width: 0.5; transition: all 0.1s ease; }
+    rect:hover { stroke: #ffffff; stroke-width: 1.5; cursor: pointer; filter: brightness(1.2); }
+  </style>"##
     );
 
     // Title
     svg.push_str(&format!(
-        r##"<text x="{}" y="30" font-size="18" fill="#e2e8f0" font-family="Inter, monospace" text-anchor="middle" font-weight="bold">Atupa Visual Diff Flamegraph</text>"##,
+        r##"<text x="{}" y="30" font-size="16" fill="#e2e8f0" font-family="'Inter', 'Roboto Mono', monospace" text-anchor="middle" font-weight="bold">Atupa Visual Diff Flamegraph</text>"##,
         SVG_W / 2.0
     ));
 
@@ -182,45 +199,43 @@ fn render_diff_bar(out: &mut String, entry: &DiffEntry, x: f64, y: f64, w: f64, 
     let baseline = entry.baseline_weight;
     let target = entry.target_weight;
     
-    let color = get_diff_color(baseline, target);
+    let class = get_diff_class(baseline, target);
     let tooltip = format_diff_tooltip(entry);
     
     out.push_str(&format!(
-        r##"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" stroke="#1e293b" stroke-width="1.0" class="func" rx="3">"##,
-        x, y, w, h, color
+        r##"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" rx="4" class="{}">"##,
+        x, y, w, h, class
     ));
     out.push_str(&format!(r##"<title>{}</title></rect>"##, tooltip));
 
-    let display_name = get_truncated_name(&entry.stack, &entry.resolved_label, &entry.target_address, w);
+    let display_name = get_truncated_name(&entry.stack, &entry.resolved_label, &entry.target_address, w, target);
     if !display_name.is_empty() {
         out.push_str(&format!(
-            r##"<text x="{:.2}" y="{:.2}" dx="6" dy="17" font-size="12" fill="#f8fafc" font-family="Inter, monospace" style="pointer-events:none">{}</text>"##,
-            x, y, display_name
+            r##"<text x="{:.2}" y="{:.2}" class="label">{}</text>"##,
+            x + 6.0, y + 13.0, display_name
         ));
     }
 }
 
-fn get_diff_color(baseline: u64, target: u64) -> String {
+fn get_diff_class(baseline: u64, target: u64) -> &'static str {
     if baseline == 0 && target == 0 {
-        return "#334155".into();
+        return "box-stable";
     }
     if baseline == 0 {
-        return "#ef4444".into(); // Regression (Red)
+        return "box-regress"; 
     } 
     if target == 0 {
-        return "#22c55e".into(); // Improvement (Green)
+        return "box-improve"; 
     } 
 
     let change = (target as f64 - baseline as f64) / baseline as f64;
 
     if change > 0.01 {
-        let intensity = ((change * 100.0).min(100.0) / 100.0) * 0.6; 
-        format!("rgba(239, 68, 68, {:.2})", 0.4 + intensity)
+        "box-regress"
     } else if change < -0.01 {
-        let intensity = ((change.abs() * 100.0).min(100.0) / 100.0) * 0.6;
-        format!("rgba(34, 197, 94, {:.2})", 0.4 + intensity)
+        "box-improve"
     } else {
-        "#475569".into() // Stable (Slate)
+        "box-stable"
     }
 }
 
@@ -248,17 +263,17 @@ fn format_diff_tooltip(entry: &DiffEntry) -> String {
     )
 }
 
-fn get_truncated_name(stack: &str, resolved: &Option<String>, addr: &Option<String>, w: f64) -> String {
+fn get_truncated_name(stack: &str, resolved: &Option<String>, addr: &Option<String>, w: f64, weight: u64) -> String {
     let leaf = stack.split(';').next_back().unwrap_or(stack);
     let base = if let Some(r) = resolved {
         r.clone()
     } else if let Some(a) = addr {
         format!("{} [{}]", leaf, a)
     } else {
-        leaf.to_string()
+        format!("{} ({} gas)", leaf, weight)
     };
 
-    let max_chars = ((w - 12.0) / 7.5) as usize; 
+    let max_chars = ((w - 12.0) / 7.0) as usize; 
     if max_chars < 3 {
         return String::new();
     }
@@ -271,22 +286,22 @@ fn get_truncated_name(stack: &str, resolved: &Option<String>, addr: &Option<Stri
 
 fn render_diff_legend(out: &mut String, y: f64) {
     let items = [
-        ("Regression (Target &gt; Base)", "#ef4444"),
-        ("Improvement (Target &lt; Base)", "#22c55e"),
-        ("No Change", "#475569"),
+        ("Regression (Target &gt; Base)", "box-regress"),
+        ("Improvement (Target &lt; Base)", "box-improve"),
+        ("No Change", "box-stable"),
     ];
 
     let start_x = (1000.0 - (items.len() as f64 * 200.0)) / 2.0;
 
-    for (i, (label, color)) in items.iter().enumerate() {
-        let x = start_x + (i as f64 * 240.0);
+    for (i, (label, class)) in items.iter().enumerate() {
+        let x = start_x + (i as f64 * 220.0);
         out.push_str(&format!(
-            r##"<rect x="{}" y="{}" width="16" height="16" fill="{}" rx="4"/>"##,
-            x, y - 12.0, color
+            r##"<rect x="{}" y="{}" width="12" height="12" rx="2" class="{}"/>"##,
+            x, y - 6.0, class
         ));
         out.push_str(&format!(
-            r##"<text x="{}" y="{}" font-size="13" fill="#cbd5e1" font-family="Inter, monospace">{}</text>"##,
-            x + 24.0, y, label
+            r##"<text x="{}" y="{}" class="legend">{}</text>"##,
+            x + 18.0, y, label
         ));
     }
 }
