@@ -550,7 +550,7 @@ async fn cmd_diff(
     diff_config: Option<String>,
     markdown: bool,
     svg: bool,
-    _protocol: Option<Protocol>,
+    protocol: Option<Protocol>,
 ) -> Result<()> {
     let base = normalise_hash(base);
     let target = normalise_hash(target);
@@ -686,6 +686,65 @@ async fn cmd_diff(
     );
     println!("{div}");
 
+    // ── Protocol Deep Diff (opt-in) ──────────────────────────────────────────
+    let mut proto_diff_rows: Vec<atupa_aave::DiffRow> = Vec::new();
+    let mut proto_name = String::new();
+
+    if let Some(ref proto) = protocol {
+        let base_steps: Vec<TraceStep> = base_report.steps.iter().map(|s| s.to_trace_step()).collect();
+        let target_steps: Vec<TraceStep> = target_report.steps.iter().map(|s| s.to_trace_step()).collect();
+
+        let proto_report = match proto {
+            Protocol::Aave => {
+                let tracer = AaveDeepTracer::new();
+                tracer.diff_reports(&base, &base_steps, &target, &target_steps)
+            }
+            Protocol::Lido => {
+                // Lido deep diff — fallback to Aave engine for now (same storage pattern)
+                let tracer = AaveDeepTracer::new();
+                tracer.diff_reports(&base, &base_steps, &target, &target_steps)
+            }
+        };
+
+        match proto_report {
+            Ok(report) => {
+                proto_name = report.protocol.clone();
+                let proto_div = "─".repeat(70).dimmed().to_string();
+                println!("\n  {} DEEP DIFF", proto_name.to_uppercase().bold().underline());
+                println!("{proto_div}");
+                println!(
+                    "  {:<28} {:<15} {:<15} {}",
+                    "Metric".bold(), "Base".bold(), "Target".bold(), "Delta".bold()
+                );
+                println!("{proto_div}");
+
+                for row in &report.rows {
+                    let sign = if row.delta >= 0.0 { "+" } else { "" };
+                    let delta_str = format!("{sign}{:.0} ({sign}{:.1}%)", row.delta, row.pct);
+                    let delta_colored = if row.delta == 0.0 {
+                        delta_str.dimmed().to_string()
+                    } else if (row.delta > 0.0) == row.higher_is_worse {
+                        delta_str.red().to_string()   // bad change
+                    } else {
+                        delta_str.green().to_string() // good change
+                    };
+                    println!(
+                        "  {:<28} {:<15} {:<15} {}",
+                        row.metric,
+                        row.base.to_string().dimmed(),
+                        row.target.to_string().dimmed(),
+                        delta_colored
+                    );
+                    proto_diff_rows.push(row.clone());
+                }
+                println!("{proto_div}");
+            }
+            Err(e) => {
+                eprintln!("  ⚠ Protocol deep diff skipped: {e}");
+            }
+        }
+    }
+
     let format_plain_delta = |delta: f64, pct: f64| -> String {
         let sign = if delta >= 0.0 { "+" } else { "" };
         format!("{sign}{delta:.0} ({sign}{pct:.1}%)")
@@ -708,7 +767,28 @@ async fn cmd_diff(
         );
         let out_path = format!("artifacts/diff/{}_vs_{}.md", &base[..10], &target[..10]);
         std::fs::create_dir_all("artifacts/diff").ok();
-        std::fs::write(&out_path, md).context("Failed to write markdown diff")?;
+
+        // Append protocol deep diff to markdown if available
+        let proto_section = if !proto_diff_rows.is_empty() {
+            let mut section = format!("\n### 🔬 {} Protocol Deep Diff\n\n", proto_name);
+            section.push_str("| Metric | Base | Target | Delta |\n");
+            section.push_str("|--------|------|--------|-------|\n");
+            for row in &proto_diff_rows {
+                let sign = if row.delta >= 0.0 { "+" } else { "" };
+                let emoji = if row.delta == 0.0 { "" }
+                    else if (row.delta > 0.0) == row.higher_is_worse { "🔴 " }
+                    else { "🟢 " };
+                section.push_str(&format!(
+                    "| **{}** | {} | {} | {}{}{:.0} ({}{:.1}%) |\n",
+                    row.metric, row.base, row.target, emoji, sign, row.delta, sign, row.pct
+                ));
+            }
+            section
+        } else {
+            String::new()
+        };
+
+        std::fs::write(&out_path, md + &proto_section).context("Failed to write markdown diff")?;
         println!("  📝 Markdown report written to {}", out_path.cyan());
     }
 

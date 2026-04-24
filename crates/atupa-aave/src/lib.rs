@@ -181,6 +181,44 @@ pub struct LabeledCall {
 }
 
 // ---------------------------------------------------------------------------
+// Protocol Diff Report
+// ---------------------------------------------------------------------------
+
+/// A field-by-field delta between two Aave protocol executions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolDiffReport {
+    pub protocol: String,
+    pub rows: Vec<DiffRow>,
+}
+
+/// A single comparable metric row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffRow {
+    pub metric: String,
+    pub base: f64,
+    pub target: f64,
+    pub delta: f64,
+    pub pct: f64,
+    /// true = a larger value is bad (gas, reads, calls), false = larger is better
+    pub higher_is_worse: bool,
+}
+
+impl DiffRow {
+    fn new(metric: &str, base: f64, target: f64, higher_is_worse: bool) -> Self {
+        let delta = target - base;
+        let pct = if base > 0.0 { delta / base * 100.0 } else { 0.0 };
+        Self {
+            metric: metric.to_string(),
+            base,
+            target,
+            delta,
+            pct,
+            higher_is_worse,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GHO Supply Metrics
 // ---------------------------------------------------------------------------
 
@@ -324,6 +362,40 @@ impl AaveDeepTracer {
         }
 
         metrics
+    }
+
+    /// Compares two traces with full Aave protocol analysis and returns a
+    /// `ProtocolDiffReport` containing field-by-field deltas.
+    pub fn diff_reports(
+        &self,
+        base_hash: &str,
+        base_steps: &[TraceStep],
+        target_hash: &str,
+        target_steps: &[TraceStep],
+    ) -> anyhow::Result<ProtocolDiffReport> {
+        let base = self.analyze_liquidation(base_hash, base_steps)?;
+        let target = self.analyze_liquidation(target_hash, target_steps)?;
+
+        let base_gho = self.extract_gho_metrics(base_steps);
+        let target_gho = self.extract_gho_metrics(target_steps);
+
+        let rows = vec![
+            DiffRow::new("Total Gas",          base.total_gas as f64,          target.total_gas as f64,          true),
+            DiffRow::new("Liquidation Gas",    base.liquidation_gas as f64,    target.liquidation_gas as f64,    true),
+            DiffRow::new("Storage Reads (SLOAD)",  base.storage_reads as f64,  target.storage_reads as f64,      true),
+            DiffRow::new("Storage Writes (SSTORE)", base.storage_writes as f64,target.storage_writes as f64,     true),
+            DiffRow::new("External Calls",     base.external_calls as f64,     target.external_calls as f64,     true),
+            DiffRow::new("Oracle Calls",       base.oracle_calls as f64,       target.oracle_calls as f64,       true),
+            DiffRow::new("Max Call Depth",     base.max_depth as f64,          target.max_depth as f64,          true),
+            DiffRow::new("Liq. Efficiency",    base.liquidation_efficiency,    target.liquidation_efficiency,    true),
+            DiffRow::new("GHO Mint Count",     base_gho.mint_count as f64,     target_gho.mint_count as f64,     false),
+            DiffRow::new("GHO Burn Count",     base_gho.burn_count as f64,     target_gho.burn_count as f64,     false),
+        ];
+
+        Ok(ProtocolDiffReport {
+            protocol: "Aave v3 / GHO".to_string(),
+            rows,
+        })
     }
 }
 

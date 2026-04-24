@@ -68,7 +68,7 @@ pub fn generate_diff_flamegraph(
     const SEPARATOR_H: f64 = 28.0;
     const MIN_BAR_PX: f64 = 2.0;
 
-    let mut evm_entries: Vec<&&DiffEntry> = entries.iter().filter(|e| e.vm_kind == VmKind::Evm).collect();
+    let evm_entries: Vec<&&DiffEntry> = entries.iter().filter(|e| e.vm_kind == VmKind::Evm).collect();
     let mut wasm_entries: Vec<&&DiffEntry> = entries.iter().filter(|e| e.vm_kind == VmKind::Stylus).collect();
     let has_wasm = !wasm_entries.is_empty();
 
