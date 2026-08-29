@@ -1,7 +1,7 @@
 // ─── Atupa Studio — Trace Data Types ─────────────────────────────────────────
 // Mirrors the Rust `StitchedReport` / `UnifiedStep` structures.
 
-export type VmKind = 'Evm' | 'Stylus';
+export type VmKind = 'Evm' | 'Stylus' | 'Starknet' | 'Solana' | 'Stellar';
 
 export type GasCategory = 
   | 'StorageWrite' 
@@ -57,7 +57,7 @@ export interface DiffReport {
 export type StudioReport = StitchedReport | DiffReport;
 
 export function isDiff(report: StudioReport): report is DiffReport {
-  return (report as any).type === 'diff';
+  return 'type' in report && report.type === 'diff';
 }
 
 export function getDisplayLabel(step: UnifiedStep, report: StitchedReport): string {
@@ -101,6 +101,39 @@ export function evmSteps(report: StitchedReport): UnifiedStep[] {
 
 export function stylusSteps(report: StitchedReport): UnifiedStep[] {
   return report.steps.filter((s) => s.vm === 'Stylus');
+}
+
+export function solanaSteps(report: StitchedReport): UnifiedStep[] {
+  return report.steps.filter((s) => s.vm === 'Solana');
+}
+
+export function starknetSteps(report: StitchedReport): UnifiedStep[] {
+  return report.steps.filter((s) => s.vm === 'Starknet');
+}
+
+export function stellarSteps(report: StitchedReport): UnifiedStep[] {
+  return report.steps.filter((s) => s.vm === 'Stellar');
+}
+
+export type DetectedRuntime = 'solana' | 'starknet' | 'stellar' | 'stylus' | 'evm';
+
+export function detectPrimaryVm(report: StitchedReport): DetectedRuntime {
+  const vms = new Set(report.steps.map((s) => s.vm));
+  if (vms.has('Solana')) return 'solana';
+  if (vms.has('Starknet')) return 'starknet';
+  if (vms.has('Stellar')) return 'stellar';
+  if (vms.has('Stylus')) return 'stylus';
+  return 'evm';
+}
+
+export function getRuntimeBadge(runtime: DetectedRuntime): { label: string; icon: string; color: string } {
+  switch (runtime) {
+    case 'solana':   return { label: 'Solana (SVM)', icon: '☀️', color: '#2fe4c4' };
+    case 'starknet': return { label: 'Starknet (Cairo)', icon: '🐺', color: '#a78bfa' };
+    case 'stellar':  return { label: 'Stellar (Soroban)', icon: '🚀', color: '#60d9ff' };
+    case 'stylus':   return { label: 'Arbitrum Stylus (Dual-VM)', icon: '🌐', color: '#ff8c40' };
+    case 'evm':      return { label: 'EVM Mainnet', icon: '⛽', color: '#ff2a4a' };
+  }
 }
 
 export function aggregateHostIOs(report: StitchedReport): AggregatedHostIO[] {

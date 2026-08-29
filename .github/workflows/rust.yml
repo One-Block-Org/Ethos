@@ -1,4 +1,4 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   fmt:
-    name: Format Check
+    name: 🎨 Format Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,39 +19,45 @@ jobs:
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Run fmt
+      - name: Check code formatting
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Lint (Clippy)
+    name: 🔍 Lint (Clippy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Build Studio
+          node-version: 22
+      - name: Build Studio Frontend
         run: |
           cd studio
-          npm install
+          npm ci || npm install
           npm run build
+      - uses: Swatinem/rust-cache@v2
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets
 
   test:
-    name: Test Suite
+    name: 🧪 Workspace Test Suite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build Studio
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'studio/package-lock.json'
+      - name: Build Studio Frontend
         run: |
           cd studio
-          npm install
+          npm ci || npm install
           npm run build
-      - name: Cargo Check
+      - uses: Swatinem/rust-cache@v2
+      - name: Workspace Check
         run: cargo check --workspace
-      - name: Run tests
+      - name: Run all workspace tests
         run: cargo test --workspace

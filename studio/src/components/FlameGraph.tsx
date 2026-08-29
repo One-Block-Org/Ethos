@@ -34,6 +34,15 @@ const COLORS = {
   rootFill:      '#0d0f1a',
   rootStroke:    '#1e2435',
   rootText:      '#64748b',
+  starknetFill:   '#1e1b4b',
+  starknetStroke: '#4338ca',
+  starknetText:   '#a5b4fc',
+  solanaFill:     '#064e3b',
+  solanaStroke:   '#059669',
+  solanaText:     '#6ee7b7',
+  stellarFill:    '#172554',
+  stellarStroke:  '#1e3a8a',
+  stellarText:    '#93c5fd',
   tooltipBg:     '#181c2a',
   tooltipBorder: '#2e3a5a',
   tooltipText:   '#e2e8f0',
@@ -47,12 +56,25 @@ interface TooltipState {
   node: FlameNode;
 }
 
-function Tooltip({ tip }: { tip: TooltipState }) {
-  const selfPct =
-    tip.node.value > 0
-      ? ((tip.node.selfCost / tip.node.value) * 100).toFixed(1)
-      : '0.0';
-  const vmLabel = tip.node.vm === 'Evm' ? 'EVM' : 'WASM/Stylus';
+function Tooltip({ tip, rootValue }: { tip: TooltipState, rootValue: number }) {
+  const totalPct = ((tip.node.value / rootValue) * 100).toFixed(2);
+  const selfPct  = ((tip.node.selfCost / rootValue) * 100).toFixed(2);
+
+  const vmLabel = {
+    Evm: 'EVM',
+    Stylus: 'WASM/Stylus',
+    Starknet: 'Starknet Cairo',
+    Solana: 'Solana SVM',
+    Stellar: 'Stellar Soroban',
+  }[tip.node.vm] || tip.node.vm;
+
+  const vmColor = {
+    Evm: COLORS.evmText,
+    Stylus: COLORS.stylusText,
+    Starknet: COLORS.starknetText,
+    Solana: COLORS.solanaText,
+    Stellar: COLORS.stellarText,
+  }[tip.node.vm] || '#fff';
 
   return (
     <foreignObject
@@ -80,10 +102,10 @@ function Tooltip({ tip }: { tip: TooltipState }) {
           {tip.node.name}
         </div>
         <div style={{ color: '#94a3b8' }}>
-          VM: <span style={{ color: tip.node.vm === 'Evm' ? COLORS.evmText : COLORS.stylusText }}>{vmLabel}</span>
+          VM: <span style={{ color: vmColor }}>{vmLabel}</span>
         </div>
         <div style={{ color: '#94a3b8' }}>
-          Total: <span style={{ color: '#e2e8f0' }}>{tip.node.value.toLocaleString('en-US', { maximumFractionDigits: 2 })} gas</span>
+          Total: <span style={{ color: '#e2e8f0' }}>{tip.node.value.toLocaleString('en-US', { maximumFractionDigits: 2 })} gas ({totalPct}%)</span>
         </div>
         <div style={{ color: '#94a3b8' }}>
           Self:  <span style={{ color: '#e2e8f0' }}>{tip.node.selfCost.toLocaleString('en-US', { maximumFractionDigits: 2 })} gas ({selfPct}%)</span>
@@ -136,19 +158,19 @@ function layoutTree(
 
 // ─── Bar ─────────────────────────────────────────────────────────────────────
 
-interface BarProps {
+interface FlameBarProps {
   lnode: LayoutNode;
   svgWidth: number;
   zoomX: number;  // current zoom origin (fraction)
   zoomW: number;  // current zoom width  (fraction)
   highlight: string;
-  onHover: (tip: TooltipState | null, evt: React.MouseEvent) => void;
+  onHover: (tip: TooltipState | null) => void;
   onClick: (n: FlameNode) => void;
 }
 
 const Bar = React.memo(function Bar({
   lnode, svgWidth, zoomX, zoomW, highlight, onHover, onClick,
-}: BarProps) {
+}: FlameBarProps) {
   const { node, x, w, row } = lnode;
 
   // Map fraction → pixel within the visible zoom window
@@ -167,6 +189,12 @@ const Bar = React.memo(function Bar({
     fill = COLORS.boundaryFill; stroke = COLORS.boundaryStroke; textColor = COLORS.boundaryText;
   } else if (node.vm === 'Stylus') {
     fill = COLORS.stylusFill; stroke = COLORS.stylusStroke; textColor = COLORS.stylusText;
+  } else if (node.vm === 'Starknet') {
+    fill = COLORS.starknetFill; stroke = COLORS.starknetStroke; textColor = COLORS.starknetText;
+  } else if (node.vm === 'Solana') {
+    fill = COLORS.solanaFill; stroke = COLORS.solanaStroke; textColor = COLORS.solanaText;
+  } else if (node.vm === 'Stellar') {
+    fill = COLORS.stellarFill; stroke = COLORS.stellarStroke; textColor = COLORS.stellarText;
   } else {
     fill = COLORS.evmFill; stroke = COLORS.evmStroke; textColor = COLORS.evmText;
   }
@@ -191,8 +219,8 @@ const Bar = React.memo(function Bar({
     <g
       style={{ cursor: row === 0 ? 'default' : 'pointer' }}
       onClick={() => row > 0 && onClick(node)}
-      onMouseMove={(e) => onHover({ x: e.nativeEvent.offsetX, y: py, node }, e)}
-      onMouseLeave={() => onHover(null, {} as React.MouseEvent)}
+      onMouseMove={(e) => onHover({ x: e.nativeEvent.offsetX, y: py, node })}
+      onMouseLeave={() => onHover(null)}
     >
       <rect
         x={visX + 1}
@@ -282,13 +310,15 @@ export function FlameGraph({ root, search = '' }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
   // Zoom state: the zoomed-in node trail (first = virtual root)
+  const [prevRoot, setPrevRoot] = useState<FlameNode>(root);
   const [zoomTrail, setZoomTrail] = useState<FlameNode[]>([root]);
-  const zoomedNode = zoomTrail[zoomTrail.length - 1];
 
-  // Recalculate when root changes (new report loaded)
-  useEffect(() => {
+  if (prevRoot !== root) {
+    setPrevRoot(root);
     setZoomTrail([root]);
-  }, [root]);
+  }
+
+  const zoomedNode = zoomTrail[zoomTrail.length - 1] ?? root;
 
   // Observe container width
   useEffect(() => {
@@ -348,7 +378,7 @@ export function FlameGraph({ root, search = '' }: Props) {
   }, []);
 
   const handleHover = useCallback(
-    (tip: TooltipState | null, _evt: React.MouseEvent) => {
+    (tip: TooltipState | null) => {
       setTooltip(tip);
     },
     [],
@@ -371,8 +401,11 @@ export function FlameGraph({ root, search = '' }: Props) {
         }}
       >
         {[
-          { color: COLORS.evmStroke, label: 'EVM opcode' },
-          { color: COLORS.stylusStroke, label: 'Stylus WASM' },
+          { color: COLORS.evmStroke, label: 'EVM' },
+          { color: COLORS.stylusStroke, label: 'Stylus' },
+          { color: COLORS.starknetStroke, label: 'Starknet' },
+          { color: COLORS.solanaStroke, label: 'Solana' },
+          { color: COLORS.stellarStroke, label: 'Stellar' },
           { color: '#6d28d9', label: 'VM Boundary' },
           { color: '#ff2a4a', label: 'Search match' },
         ].map(({ color, label }) => (
@@ -421,7 +454,7 @@ export function FlameGraph({ root, search = '' }: Props) {
             />
           ))}
 
-          {tooltip && <Tooltip tip={tooltip} />}
+          {tooltip && <Tooltip tip={tooltip} rootValue={root.value} />}
         </svg>
       </div>
 

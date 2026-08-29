@@ -2,7 +2,6 @@
 name = "atupa-parser"
 version = { workspace = true }
 edition = { workspace = true }
-authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 description = { workspace = true }
@@ -16,9 +15,6 @@ categories = { workspace = true }
 atupa-core = { workspace = true }
 atupa-rpc = { workspace = true }
 atupa-adapters = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]

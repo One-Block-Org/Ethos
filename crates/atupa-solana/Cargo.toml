@@ -1,0 +1,21 @@
+[package]
+name = "atupa-solana"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+readme = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+description = "Solana Sealevel VM log-to-trace adapter for the Atupa engine"
+keywords = ["solana", "sealevel", "tracing", "logs"]
+categories = ["development-tools", "cryptography::cryptocurrencies"]
+
+[dependencies]
+atupa-core = { workspace = true }
+atupa-rpc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { workspace = true }
+regex = "1.11.1"

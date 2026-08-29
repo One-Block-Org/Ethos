@@ -2,7 +2,6 @@
 name = "atupa-output"
 version = { workspace = true }
 edition = { workspace = true }
-authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 description = { workspace = true }
@@ -14,9 +13,5 @@ categories = { workspace = true }
 
 [dependencies]
 atupa-core = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 anyhow = { workspace = true }
 askama = { workspace = true }
-log = { workspace = true }
-# SVG generation logic will be here
